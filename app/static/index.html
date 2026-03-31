@@ -347,6 +347,50 @@
             vertical-align: middle
         }
 
+        .modal-select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: .85rem;
+            font-family: 'Inter', system-ui, sans-serif;
+            color: #1e293b;
+            outline: none;
+            transition: border-color .2s;
+            background: #fff;
+            margin-bottom: 14px;
+            cursor: pointer
+        }
+
+        .modal-select:focus {
+            border-color: #3b82f6
+        }
+
+        .modal-time-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 10px 14px;
+            background: #f1f5f9;
+            border-radius: 12px;
+            font-size: .82rem;
+            font-weight: 600;
+            color: #334155
+        }
+
+        .modal-time-row .time-icon {
+            font-size: 1.1rem
+        }
+
+        .modal-row-hidden {
+            display: none
+        }
+
+        .fc .fc-highlight {
+            background: rgba(79, 70, 229, .15) !important
+        }
+
         /* FullCalendar overrides */
         .fc {
             font-family: 'Inter', system-ui, sans-serif !important
@@ -465,7 +509,7 @@
         </div>
     </div>
 
-    <!-- Modal de edición -->
+    <!-- Modal de edición / creación -->
     <div class="modal-overlay" id="modal-overlay">
         <div class="modal">
             <div class="modal-header">
@@ -473,6 +517,24 @@
                 <p id="modal-subtitle">Fecha · Bloque</p>
             </div>
             <div class="modal-body">
+                <!-- Rango de horas (solo visible al crear) -->
+                <div class="modal-time-row modal-row-hidden" id="modal-time-row">
+                    <span class="time-icon">🕐</span>
+                    <span id="modal-time-label">14:00 — 16:30</span>
+                </div>
+                <!-- Categoría (solo visible al crear) -->
+                <div class="modal-row-hidden" id="modal-category-row">
+                    <label class="modal-label">🏷️ Categoría:</label>
+                    <select class="modal-select" id="modal-category">
+                        <option value="🔬 Inv. profunda">🔬 Investigación profunda</option>
+                        <option value="✍️ Escritura">✍️ Escritura / producción</option>
+                        <option value="📋 Gestión">📋 Gestión y docencia</option>
+                        <option value="🌙 Revisión">🌙 Revisión ligera</option>
+                        <option value="📖 Lectura">📖 Lectura académica</option>
+                        <option value="💻 Desarrollo">💻 Desarrollo / programación</option>
+                        <option value="📝 Otro">📝 Otro</option>
+                    </select>
+                </div>
                 <label class="modal-label">📋 Detalle / Objetivo:</label>
                 <textarea class="modal-textarea" id="modal-textarea"
                     placeholder="Escribe aquí los detalles de la actividad, avances de tesis, notas de clase..."></textarea>
@@ -488,8 +550,8 @@
     <script>
         let CLIENT_ID = '', tokenClient = null, accessToken = null, calendar = null;
 
-        // Estado del modal
-        let modalState = { fecha: '', bloqueId: '', source: '', activity: '' };
+        // Estado del modal: mode = 'edit' | 'create'
+        let modalState = { mode: 'edit', fecha: '', bloqueId: '', source: '', activity: '', startStr: '', endStr: '' };
 
         const RESEARCH_BLOCKS = [
             { id: 'research_1', name: '🔬 Inv. profunda', time: '07:30-09:00', default: 'Revisar literatura y modelos de IA para control de señales de tráfico' },
@@ -526,27 +588,60 @@
         // ==========================================
         // MODAL
         // ==========================================
-        function openModal(title, subtitle, currentText, fecha, bloqueId, source, activity) {
-            modalState = { fecha, bloqueId, source, activity };
+        function openModalEdit(title, subtitle, currentText, fecha, bloqueId, source, activity) {
+            modalState = { mode: 'edit', fecha, bloqueId, source, activity, startStr: '', endStr: '' };
             document.getElementById('modal-title').textContent = '✏️ ' + title;
             document.getElementById('modal-subtitle').textContent = fecha + ' · ' + bloqueId;
             document.getElementById('modal-textarea').value = currentText || '';
+            document.getElementById('modal-time-row').classList.add('modal-row-hidden');
+            document.getElementById('modal-category-row').classList.add('modal-row-hidden');
+            document.getElementById('modal-btn-delete').style.display = '';
             document.getElementById('modal-overlay').classList.add('active');
             setTimeout(() => document.getElementById('modal-textarea').focus(), 100);
         }
-        function closeModal() {
-            document.getElementById('modal-overlay').classList.remove('active');
-            modalState = { fecha: '', bloqueId: '', source: '', activity: '' };
+
+        function openModalCreate(fecha, startStr, endStr) {
+            const startHH = startStr.includes('T') ? startStr.split('T')[1].substring(0, 5) : '00:00';
+            const endHH = endStr.includes('T') ? endStr.split('T')[1].substring(0, 5) : '23:59';
+            const bloqueId = 'custom_' + Date.now();
+            modalState = { mode: 'create', fecha, bloqueId, source: 'doctorado', activity: '', startStr, endStr };
+            document.getElementById('modal-title').textContent = '➕ Nueva Actividad';
+            document.getElementById('modal-subtitle').textContent = fecha;
+            document.getElementById('modal-time-row').classList.remove('modal-row-hidden');
+            document.getElementById('modal-time-label').textContent = startHH + ' — ' + endHH;
+            document.getElementById('modal-category-row').classList.remove('modal-row-hidden');
+            document.getElementById('modal-category').selectedIndex = 0;
+            document.getElementById('modal-textarea').value = '';
+            document.getElementById('modal-btn-delete').style.display = 'none';
+            document.getElementById('modal-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('modal-textarea').focus(), 100);
         }
 
-        // Guardar
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('active');
+            modalState = { mode: 'edit', fecha: '', bloqueId: '', source: '', activity: '', startStr: '', endStr: '' };
+            if (calendar) calendar.unselect();
+        }
+
+        // Guardar (edit o create)
         document.getElementById('modal-btn-save').onclick = async () => {
             const desc = document.getElementById('modal-textarea').value.trim();
             if (!desc) { alert('El detalle no puede estar vacío.'); return }
+
+            let bloqueId = modalState.bloqueId;
+            let fullDesc = desc;
+
+            // Si es creación, prepend la categoría y guardar horas en la descripción
+            if (modalState.mode === 'create') {
+                const cat = document.getElementById('modal-category').value;
+                const timeLabel = document.getElementById('modal-time-label').textContent;
+                fullDesc = cat + ' [' + timeLabel + ']\n' + desc;
+            }
+
             try {
                 await fetch('/api/tareas', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: modalState.bloqueId, descripcion: desc })
+                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc })
                 });
                 closeModal();
                 if (calendar) calendar.refetchEvents();
@@ -621,6 +716,30 @@
                             extendedProps: {
                                 source: 'doctorado', bloqueId: b.id, fecha: ds,
                                 descripcion: desc, blockName: b.name, tareaGuardada: saved ? saved.descripcion : ''
+                            }
+                        });
+                    });
+
+                    // 3) Eventos custom creados por el usuario (bloque_id empieza con custom_)
+                    tareas.filter(t => t.bloque_id.startsWith('custom_')).forEach(t => {
+                        const c = getColor('', 'doctorado');
+                        // Extraer horas del texto: "Cat [HH:MM — HH:MM]\nDetalle"
+                        const timeMatch = t.descripcion.match(/\[(\d{2}:\d{2})\s*—\s*(\d{2}:\d{2})\]/);
+                        const st = timeMatch ? timeMatch[1] : '08:00';
+                        const en = timeMatch ? timeMatch[2] : '09:00';
+                        // Extraer categoría (primera línea antes de [)
+                        const catMatch = t.descripcion.match(/^(.+?)\s*\[/);
+                        const cat = catMatch ? catMatch[1].trim() : '';
+                        // Detalle es todo después del primer \n
+                        const nlIdx = t.descripcion.indexOf('\n');
+                        const detail = nlIdx > -1 ? t.descripcion.substring(nlIdx + 1) : t.descripcion;
+                        all.push({
+                            title: (cat || '📝') + ': ' + detail,
+                            start: ds + 'T' + st + ':00', end: ds + 'T' + en + ':00',
+                            backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
+                            extendedProps: {
+                                source: 'custom', bloqueId: t.bloque_id, fecha: ds,
+                                descripcion: t.descripcion, blockName: cat || 'Custom', tareaGuardada: detail
                             }
                         });
                     });
@@ -728,6 +847,7 @@
                 height: 700, nowIndicator: true, allDaySlot: true, allDayText: 'Día',
                 slotDuration: '00:30:00', slotLabelInterval: '01:00:00',
                 expandRows: true, dayMaxEvents: true,
+                selectable: true, selectMirror: true,
                 events: loadAllEvents,
                 eventsSet: function (events) { updateCC(events) },
 
@@ -741,32 +861,19 @@
                     return { html: h };
                 },
 
-                // Click en evento → abrir modal (no prompt)
+                // Click en evento existente → modal de edición
                 eventClick: function (info) {
                     info.jsEvent.preventDefault();
                     const p = info.event.extendedProps;
-                    if (p.source === 'external') return; // externos no se editan
-                    const label = p.source === 'doctorado' ? p.blockName : (p.activity || 'Actividad');
-                    openModal(label, p.fecha + ' · ' + p.bloqueId, p.descripcion || '', p.fecha, p.bloqueId, p.source, p.activity || '');
+                    if (p.source === 'external') return;
+                    const label = p.source === 'doctorado' ? p.blockName : (p.source === 'custom' ? p.blockName : (p.activity || 'Actividad'));
+                    openModalEdit(label, p.fecha + ' · ' + p.bloqueId, p.descripcion || '', p.fecha, p.bloqueId, p.source, p.activity || '');
                 },
 
-                // Click en espacio vacío (fin de semana) → agregar bloque de investigación
-                dateClick: function (info) {
-                    const day = info.date.getDay();
-                    if (day !== 0 && day !== 6) return;
-                    const fecha = fmtDate(info.date);
-                    const choice = prompt(
-                        '📚 Activar bloque de investigación en fin de semana:\n' +
-                        '1. 🔬 Inv. profunda (07:30-09:00)\n' +
-                        '2. ✍️ Escritura (09:00-10:30)\n' +
-                        '3. 📋 Gestión (10:30-11:30)\n' +
-                        '4. 🌙 Revisión (22:20-23:20)\n\nElige (1-4):'
-                    );
-                    if (!choice) return;
-                    const idx = parseInt(choice) - 1;
-                    if (idx < 0 || idx > 3) { alert('Opción no válida.'); return }
-                    const block = RESEARCH_BLOCKS[idx];
-                    openModal(block.name, fecha + ' · ' + block.id, block.default, fecha, block.id, 'doctorado', block.name);
+                // Arrastrar para seleccionar rango libre → modal de creación
+                select: function (info) {
+                    const fecha = fmtDate(info.start);
+                    openModalCreate(fecha, info.startStr, info.endStr);
                 }
             });
             calendar.render();
