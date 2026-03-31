@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda Doctoral 2.0</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            background: #f5f7fb;
+            padding: 24px 16px;
+        }
+
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 32px;
+            box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            padding: 28px;
+        }
+
+        .header {
+            background: #0f2b3d;
+            color: white;
+            padding: 24px 28px;
+            border-radius: 20px;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 1.9rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+
+        .header p {
+            opacity: 0.85;
+            margin-top: 8px;
+            font-size: 0.95rem;
+        }
+
+        /* Panel de Autenticación */
+        .auth-card {
+            background: #f8fafc;
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            border: 1px solid #e2edf2;
+        }
+
+        .status-badge {
+            background: #e6f0fa;
+            padding: 8px 16px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            color: #1e4a76;
+        }
+
+        button {
+            border: none;
+            background: #e2e8f0;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:active {
+            transform: scale(0.97);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #1e40af;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1e3a8a;
+        }
+
+        .btn-google {
+            background: #4285f4;
+            color: white;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+        }
+
+        /* Controles de navegación y sincronización */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            background: #eef2ff;
+            padding: 15px 20px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+        }
+
+        input[type="date"] {
+            padding: 8px 15px;
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.95rem;
+            color: #0f2b3d;
+            outline: none;
+        }
+
+        /* Grid de Tareas de Investigación */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            color: #0f2b3d;
+            border-left: 4px solid #3b82f6;
+            padding-left: 12px;
+            margin-bottom: 8px;
+        }
+
+        .card-time {
+            color: #64748b;
+            font-size: 0.85rem;
+            margin-bottom: 12px;
+            padding-left: 16px;
+        }
+
+        .task-display {
+            background: #f9fafb;
+            border-radius: 16px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+            min-height: 70px;
+            color: #334155;
+            word-break: break-word;
+        }
+
+        .empty-task {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        /* Tabla Distributivo Docente */
+        .schedule-wrapper {
+            overflow-x: auto;
+            background: white;
+            border-radius: 24px;
+            border: 1px solid #e2e8f0;
+            padding: 20px;
+        }
+
+        .schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            min-width: 700px;
+        }
+
+        .schedule-table th,
+        .schedule-table td {
+            border: 1px solid #e2e8f0;
+            padding: 12px 8px;
+            vertical-align: top;
+        }
+
+        .schedule-table th {
+            background: #f1f5f9;
+            font-weight: 600;
+        }
+
+        .slot-activity {
+            font-weight: 600;
+            color: #0f3b5c;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        .slot-task {
+            background: #fefce8;
+            padding: 6px;
+            border-radius: 12px;
+            margin: 6px 0;
+            font-size: 0.8rem;
+            text-align: left;
+        }
+
+        .slot-buttons {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .small-btn {
+            padding: 6px 12px;
+            font-size: 0.75rem;
+        }
+
+        .calendar-sync-btn {
+            background: #eef2ff;
+            color: #1e40af;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app-container">
+        <div class="header">
+            <h1>📘 Agenda Doctorado & Investigación 2.0</h1>
+            <p>Sistema centralizado con persistencia en la nube y proyección automática a Google Calendar.</p>
+        </div>
+
+        <div class="auth-card">
+            <div>
+                <button id="btn-login" class="btn-google">🔌 Conectar Google Calendar</button>
+                <button id="btn-logout" class="btn-outline" style="display: none;">🚪 Desconectar</button>
+            </div>
+            <div id="auth-status" class="status-badge">⏳ Esperando conexión...</div>
+        </div>
+
+        <div class="controls">
+            <label><strong>📅 Seleccionar fecha de planificación:</strong></label>
+            <input type="date" id="date-picker">
+            <button id="btn-sync-semester" class="btn-primary" style="margin-left:auto;">
+                ⚡ Sincronizar Distributivo Semestral
+            </button>
+        </div>
+
+        <h2 style="margin-bottom: 20px; color: #0f2b3d;">🧠 Bloques del día seleccionado (Investigación Doctoral)</h2>
+        <div class="grid" id="tasks-container">
+        </div>
+
+        <h2 style="margin-top: 40px; margin-bottom: 20px; color: #0f2b3d;">🏛️ Jornada laboral universitaria
+            (Distributivo)</h2>
+        <div class="schedule-wrapper" id="work-schedule-wrapper">
+        </div>
+    </div>
+
+    <script>
+        // Variables globales 
+        let CLIENT_ID = "";
+        let tokenClient = null;
+        let accessToken = null;
+
+        // Estructura base de los bloques de investigación
+        const RESEARCH_BLOCKS = [
+            { id: "research_1", name: "🔬 Investigación profunda", time: "07:30 - 09:00", default: "Revisar literatura y modelos de IA para control de señales de tráfico" },
+            { id: "research_2", name: "✍️ Escritura / producción", time: "09:00 - 10:30", default: "Avanzar en la redacción y revisión del libro" },
+            { id: "research_3", name: "📋 Gestión y docencia", time: "10:30 - 11:30", default: "Preparar material y recursos para Diseño de procesos ETL" },
+            { id: "research_4", name: "🌙 Revisión ligera", time: "22:20 - 23:20", default: "Planificar el día siguiente" }
+        ];
+
+        // ==========================================
+        // 1. ARRANQUE SEGURO: Pedir credenciales a Python
+        // ==========================================
+        async function iniciarApp() {
+            try {
+                document.getElementById("auth-status").innerText = "🔐 Cargando credenciales seguras...";
+                const res = await fetch('/api/config');
+                const config = await res.json();
+
+                CLIENT_ID = config.GOOGLE_CLIENT_ID;
+
+                if (!CLIENT_ID) throw new Error("No se recibió CLIENT_ID del backend.");
+
+                loadGoogleApis();
+                cargarDia(document.getElementById("date-picker").value);
+                renderWorkSchedule(); // Dibuja la tabla del distributivo
+
+                document.getElementById("auth-status").innerText = "🔴 Listo para conectar";
+            } catch (error) {
+                console.error("Error cargando configuración:", error);
+                document.getElementById("auth-status").innerText = "⚠️ Error leyendo .env desde Python";
+                document.getElementById("auth-status").style.background = "#fee2e2";
+                document.getElementById("auth-status").style.color = "#991b1b";
+            }
+        }
+
+        // ==========================================
+        // 2. GOOGLE CALENDAR (OAuth2 con GSI)
+        // ==========================================
+        function loadGoogleApis() {
+            const gisScript = document.createElement("script");
+            gisScript.src = "https://accounts.google.com/gsi/client";
+            gisScript.async = true;
+            gisScript.defer = true;
+            gisScript.onload = () => {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: "https://www.googleapis.com/auth/calendar.events",
+                    callback: (resp) => {
+                        if (resp.error) {
+                            console.error("Error de autenticación:", resp);
+                            return;
+                        }
+                        accessToken = resp.access_token;
+                        document.getElementById("btn-login").style.display = "none";
+                        document.getElementById("btn-logout").style.display = "inline-flex";
+                        document.getElementById("auth-status").innerText = "✅ Conectado a Google Calendar";
+                        document.getElementById("auth-status").style.background = "#dcfce7";
+                        document.getElementById("auth-status").style.color = "#166534";
+                    }
+                });
+            };
+            document.head.appendChild(gisScript);
+        }
+
+        document.getElementById("btn-login").onclick = () => {
+            if (tokenClient) tokenClient.requestAccessToken({ prompt: "consent" });
+        };
+
+        document.getElementById("btn-logout").onclick = () => {
+            accessToken = null;
+            location.reload();
+        };
+
+        // ==========================================
+        // 3. INVESTIGACIÓN: NUBE (Supabase vía FastAPI)
+        // ==========================================
+        async function cargarDia(fecha) {
+            try {
+                const res = await fetch(`/api/tareas/${fecha}`);
+                const json = await res.json();
+                const tareasNube = json.data || [];
+
+                const container = document.getElementById("tasks-container");
+                container.innerHTML = "";
+
+                RESEARCH_BLOCKS.forEach(block => {
+                    const tareaGuardada = tareasNube.find(t => t.bloque_id === block.id);
+                    const desc = tareaGuardada ? tareaGuardada.descripcion : block.default;
+
+                    container.innerHTML += `
+                    <div class="card">
+                        <h3>${block.name}</h3>
+                        <div class="card-time">🕒 ${block.time}</div>
+                        <div class="task-display">
+                            <strong>📌 Objetivo:</strong><br>
+                            ${desc ? desc : '<span class="empty-task">Sin definir</span>'}
+                        </div>
+                        <div>
+                            <button onclick="editarTarea('${fecha}', '${block.id}', '${desc}')">
+                                ✏️ Modificar
+                            </button>
+                        </div>
+                    </div>
+                `;
+                });
+            } catch (error) {
+                console.error("Error cargando las tareas de la base de datos:", error);
+            }
+        }
+
+        window.editarTarea = async (fecha, bloque_id, descActual) => {
+            const nuevaDesc = prompt(`Actualizar tarea para ${fecha}:`, descActual);
+
+            if (nuevaDesc !== null && nuevaDesc.trim() !== "") {
+                try {
+                    await fetch('/api/tareas', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            fecha: fecha,
+                            bloque_id: bloque_id,
+                            descripcion: nuevaDesc.trim()
+                        })
+                    });
+                    cargarDia(fecha);
+                } catch (error) {
+                    alert("Hubo un error al guardar en la nube. Revisa la consola.");
+                    console.error(error);
+                }
+            }
+        };
+
+        // ==========================================
+        // 4. DISTRIBUTIVO DOCENTE: TABLA INTERACTIVA
+        // ==========================================
+        const WEEKDAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+        const HOURS = ["13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"];
+
+        const SCHEDULE_DATA = {
+            "Lunes": { "13:00": "AD 5 - Tutorías", "14:00": "AD 5 - Tutorías", "15:00": "AD 1 - ACD Ecuaciones Difer.", "16:00": "AD 1 - ACD Ecuaciones Difer.", "17:00": "AD 1 - ACD Álgebra Lineal", "18:00": "AD 1 - ACD Álgebra Lineal", "19:00": "AV 1 - Vinculación", "20:00": "AV 1 - Vinculación" },
+            "Martes": { "13:00": "AG 5c - Consejo Consultivo", "14:00": "AD 1 - ACD Ecuaciones Difer.", "15:00": "AD 1 - ACD Ecuaciones Difer.", "16:00": "AD 1 - ACD Cálculo de una Var.", "17:00": "AD 1 - ACD Cálculo de una Var.", "18:00": "AD 1 - APE Cálculo de una Var.", "19:00": "AI 1 - Investigación", "20:00": "AI 1 - Investigación" },
+            "Miércoles": { "13:00": "AG 5c - Consejo Consultivo", "14:00": "AD 2 - Planificación", "15:00": "AD 2 - Planificación", "16:00": "AD 8 - Evaluación", "17:00": "AD 1 - ACD Cálculo de una Var.", "18:00": "AD 1 - ACD Cálculo de una Var.", "19:00": "AD 1 - APE Ecuaciones Difer.", "20:00": "AD 1 - APE Ecuaciones Difer." },
+            "Jueves": { "13:00": "AG 5c - Consejo Consultivo", "14:00": "AD 2 - Planificación", "15:00": "AD 2 - Planificación", "16:00": "AD 8 - Evaluación", "17:00": "AV 1 - Vinculación", "18:00": "AV 1 - Vinculación", "19:00": "AD 1 - APE Cálculo de una Var.", "20:00": "AD 1 - APE Cálculo de una Var." },
+            "Viernes": { "13:00": "AG 5c - Consejo Consultivo", "14:00": "AD 2 - Planificación", "15:00": "AD 9 - Dir. Trabajos Tit.", "16:00": "AD 8 - Evaluación", "17:00": "AD 1 - ACD Álgebra Lineal", "18:00": "AD 1 - APE Álgebra Lineal", "19:00": "AI 1 - Investigación", "20:00": "AI 1 - Investigación" }
+        };
+
+        // Memoria local para las tareas específicas de la jornada
+        let workTasks = JSON.parse(localStorage.getItem("agenda_work_tasks")) || {};
+        WEEKDAYS.forEach(day => {
+            if (!workTasks[day]) workTasks[day] = {};
+            HOURS.forEach(h => { if (workTasks[day][h] === undefined) workTasks[day][h] = ""; });
+        });
+
+        function saveWorkTasks() {
+            localStorage.setItem("agenda_work_tasks", JSON.stringify(workTasks));
+        }
+
+        function renderWorkSchedule() {
+            const wrapper = document.getElementById("work-schedule-wrapper");
+            let html = `<table class="schedule-table"><thead><tr><th>Hora</th>`;
+            WEEKDAYS.forEach(day => { html += `<th>${day}</th>`; });
+            html += `</tr></thead><tbody>`;
+
+            HOURS.forEach(hour => {
+                html += `<tr><td style="font-weight:600; text-align:center; vertical-align:middle;">${hour}</td>`;
+                WEEKDAYS.forEach(day => {
+                    const activity = SCHEDULE_DATA[day]?.[hour] || "—";
+                    if (activity === "—") {
+                        html += `<td></td>`;
+                    } else {
+                        const userTask = workTasks[day][hour] || "";
+                        html += `
+                        <td>
+                            <div class="slot-activity">${activity}</div>
+                            <div class="slot-task">${userTask ? `📋 ${userTask}` : `<span style="color:#94a3b8;">➕ Añade una tarea</span>`}</div>
+                            <div class="slot-buttons">
+                                <button class="small-btn" onclick="editWorkTask('${day}', '${hour}')">Editar</button>
+                                <button class="small-btn calendar-sync-btn" onclick="syncSingleWork('${day}', '${hour}', '${activity}')">📅 Enviar</button>
+                            </div>
+                        </td>`;
+                    }
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            wrapper.innerHTML = html;
+        }
+
+        window.editWorkTask = (day, hour) => {
+            const currentTask = workTasks[day][hour] || "";
+            const newTask = prompt(`Tarea específica para ${day} a las ${hour}:`, currentTask);
+            if (newTask !== null) {
+                workTasks[day][hour] = newTask.trim();
+                saveWorkTasks();
+                renderWorkSchedule();
+            }
+        };
+
+        window.syncSingleWork = async (day, hour, activity) => {
+            if (!accessToken) return alert("⚠️ Conecta Google Calendar primero.");
+
+            // Calcula la fecha del *próximo* día seleccionado
+            const map = { "Lunes": "Monday", "Martes": "Tuesday", "Miércoles": "Wednesday", "Jueves": "Thursday", "Viernes": "Friday", "Sábado": "Saturday", "Domingo": "Sunday" };
+            const targetIdx = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(map[day]);
+            const today = new Date();
+            let diff = targetIdx - today.getDay();
+            if (diff <= 0) diff += 7;
+            const targetDate = new Date(today);
+            targetDate.setDate(today.getDate() + diff);
+
+            const y = targetDate.getFullYear();
+            const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+            const d = String(targetDate.getDate()).padStart(2, '0');
+
+            const startISO = `${y}-${m}-${d}T${hour}:00-05:00`;
+            let endHourStr = "21:00";
+            const idx = HOURS.indexOf(hour);
+            if (idx < HOURS.length - 1) endHourStr = HOURS[idx + 1];
+            const endISO = `${y}-${m}-${d}T${endHourStr}:00-05:00`;
+
+            const userTask = workTasks[day][hour] || "(sin tarea específica)";
+            const title = `🏛️ ${activity}`;
+            const description = `Actividad institucional: ${activity}\nTarea planificada: ${userTask}`;
+
+            try {
+                const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+                    method: "POST",
+                    headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        summary: title,
+                        description: description,
+                        start: { dateTime: startISO, timeZone: "America/Guayaquil" },
+                        end: { dateTime: endISO, timeZone: "America/Guayaquil" }
+                    })
+                });
+                if (res.ok) alert(`✅ Tarea "${activity}" enviada a Calendar para el próximo ${day}.`);
+                else alert("Error al crear el evento.");
+            } catch (e) { console.error(e); }
+        };
+
+        // ==========================================
+        // 5. SINCRONIZACIÓN MASIVA DE SEMESTRE
+        // ==========================================
+        document.getElementById("btn-sync-semester").onclick = async () => {
+            if (!accessToken) {
+                alert("⚠️ Primero debes hacer clic en 'Conectar Google Calendar'.");
+                return;
+            }
+
+            const semestreId = prompt("Ingresa el ID del semestre (ej: 2026A):", "2026A");
+            if (!semestreId) return;
+
+            const fechaInicio = prompt("Ingresa la fecha de INICIO del ciclo académico (YYYY-MM-DD):", document.getElementById("date-picker").value);
+            if (!fechaInicio) return;
+
+            const fechaFin = prompt("Ingresa la fecha de FIN del ciclo académico (YYYY-MM-DD):", "2026-08-31");
+            if (!fechaFin) return;
+
+            const btn = document.getElementById("btn-sync-semester");
+            const textoOriginal = btn.innerHTML;
+            btn.innerHTML = "⏳ Sincronizando... (esto puede tomar unos segundos)";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/sincronizar-semestre', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token: accessToken,
+                        fecha_inicio: fechaInicio,
+                        fecha_fin: fechaFin,
+                        semestre_id: semestreId
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.status === "success") {
+                    alert(`✅ ¡Éxito!\n\n📅 Creados: ${data.eventos_creados}\n🔄 Actualizados: ${data.eventos_actualizados}\n${data.errores > 0 ? '⚠️ Errores: ' + data.errores : ''}\n\nSemestre: ${semestreId}`);
+                } else {
+                    alert("Hubo un problema con la sincronización: " + (data.mensaje || "Error desconocido."));
+                }
+            } catch (error) {
+                console.error("Error en sincronización masiva:", error);
+                alert("Error de conexión con el servidor Python.");
+            } finally {
+                btn.innerHTML = textoOriginal;
+                btn.disabled = false;
+            }
+        };
+
+        // ==========================================
+        // INICIALIZACIÓN
+        // ==========================================
+        const dateInput = document.getElementById("date-picker");
+        // Asigna la fecha de hoy por defecto
+        dateInput.value = new Date().toISOString().split('T')[0];
+        dateInput.addEventListener('change', (e) => cargarDia(e.target.value));
+
+        // Despegar la aplicación
+        iniciarApp();
+
+    </script>
+</body>
+
+</html>
