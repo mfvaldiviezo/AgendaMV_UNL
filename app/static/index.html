@@ -267,10 +267,6 @@
             cursor: pointer
         }
 
-        .fc .fc-event-title {
-            font-weight: 500
-        }
-
         .fc .fc-timegrid-now-indicator-line {
             border-color: #e11d48 !important;
             border-width: 2px !important
@@ -291,6 +287,11 @@
 
         .fc .fc-scrollgrid {
             border-color: #e2e8f0 !important
+        }
+
+        .fc .fc-day-sat,
+        .fc .fc-day-sun {
+            background: rgba(241, 245, 249, .5) !important
         }
     </style>
 </head>
@@ -327,7 +328,7 @@
                 Consultivo</span>
             <span class="legend-item"><span class="legend-dot" style="background:#475569"></span>Eventos Externos</span>
         </div>
-        <div class="command-center" id="command-center">
+        <div class="command-center">
             <h2>🎯 Centro de Control — Hoy</h2>
             <div class="cc-events" id="cc-events">
                 <div class="cc-empty">Cargando alertas del día...</div>
@@ -339,22 +340,15 @@
     </div>
 
     <script>
-        // ==========================================
-        // VARIABLES GLOBALES
-        // ==========================================
-        let CLIENT_ID = '';
-        let tokenClient = null;
-        let accessToken = null;
-        let calendar = null;
+        let CLIENT_ID = '', tokenClient = null, accessToken = null, calendar = null;
 
         const RESEARCH_BLOCKS = [
-            { id: 'research_1', name: '🔬 Inv. profunda', time: '07:30 - 09:00', default: 'Revisar literatura y modelos de IA para control de señales de tráfico' },
-            { id: 'research_2', name: '✍️ Escritura', time: '09:00 - 10:30', default: 'Avanzar en la redacción y revisión del libro' },
-            { id: 'research_3', name: '📋 Gestión', time: '10:30 - 11:30', default: 'Preparar material y recursos para Diseño de procesos ETL' },
-            { id: 'research_4', name: '🌙 Revisión', time: '22:20 - 23:20', default: 'Planificar el día siguiente' }
+            { id: 'research_1', name: '🔬 Inv. profunda', time: '07:30-09:00', default: 'Revisar literatura y modelos de IA para control de señales de tráfico' },
+            { id: 'research_2', name: '✍️ Escritura', time: '09:00-10:30', default: 'Avanzar en la redacción y revisión del libro' },
+            { id: 'research_3', name: '📋 Gestión', time: '10:30-11:30', default: 'Preparar material y recursos para Diseño de procesos ETL' },
+            { id: 'research_4', name: '🌙 Revisión', time: '22:20-23:20', default: 'Planificar el día siguiente' }
         ];
 
-        // Keyed by JS getDay(): 1=Mon ... 5=Fri
         const SCHEDULE = {
             1: { '13:00': 'AD 5 - Tutorías', '14:00': 'AD 5 - Tutorías', '15:00': 'AD 1 - ACD Ecuaciones Diferenciales', '16:00': 'AD 1 - ACD Ecuaciones Diferenciales', '17:00': 'AD 1 - ACD Álgebra Lineal', '18:00': 'AD 1 - ACD Álgebra Lineal', '19:00': 'AV 1 - Vinculación', '20:00': 'AV 1 - Vinculación' },
             2: { '13:00': 'AG 5c - Consejo Consultivo', '14:00': 'AD 1 - ACD Ecuaciones Diferenciales', '15:00': 'AD 1 - ACD Ecuaciones Diferenciales', '16:00': 'AD 1 - ACD Cálculo de una Variable', '17:00': 'AD 1 - ACD Cálculo de una Variable', '18:00': 'AD 1 - APE Cálculo de una Variable', '19:00': 'AI 1 - Investigación', '20:00': 'AI 1 - Investigación' },
@@ -363,9 +357,6 @@
             5: { '13:00': 'AG 5c - Consejo Consultivo', '14:00': 'AD 2 - Planificación', '15:00': 'AD 9 - Dirección de Trabajos', '16:00': 'AD 8 - Evaluación', '17:00': 'AD 1 - ACD Álgebra Lineal', '18:00': 'AD 1 - APE Álgebra Lineal', '19:00': 'AI 1 - Investigación', '20:00': 'AI 1 - Investigación' }
         };
 
-        // ==========================================
-        // PALETA DE COLORES
-        // ==========================================
         function getColor(title, source) {
             if (source === 'doctorado') return { bg: '#4f46e5', border: '#4338ca' };
             if (source === 'external') return { bg: '#475569', border: '#334155' };
@@ -380,58 +371,65 @@
             return { bg: '#64748b', border: '#475569' };
         }
 
-        function fmtDate(d) {
-            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-        }
+        function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
+
+        function workBloqueId(jsDay, hour) { return 'work_' + jsDay + '_' + hour.replace(':', '') }
 
         // ==========================================
-        // CARGA DE EVENTOS PARA FULLCALENDAR
+        // CARGA DE EVENTOS
         // ==========================================
         async function loadAllEvents(fetchInfo, successCb, failureCb) {
             try {
-                const all = [];
-                const dates = [];
+                const all = [], dates = [];
                 let cur = new Date(fetchInfo.start);
-                while (cur < fetchInfo.end) { dates.push(fmtDate(cur)); cur.setDate(cur.getDate() + 1); }
+                while (cur < fetchInfo.end) { dates.push(fmtDate(cur)); cur.setDate(cur.getDate() + 1) }
 
-                // 1) Distributivo docente (estático)
-                dates.forEach(ds => {
-                    const jsDay = new Date(ds + 'T12:00:00').getDay();
-                    if (!SCHEDULE[jsDay]) return;
-                    for (const [hr, act] of Object.entries(SCHEDULE[jsDay])) {
-                        const c = getColor(act, 'distributivo');
-                        const eh = String(parseInt(hr) + 1).padStart(2, '0') + ':00';
-                        all.push({
-                            title: '🏛️ ' + act,
-                            start: ds + 'T' + hr + ':00', end: ds + 'T' + eh + ':00',
-                            backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
-                            extendedProps: { source: 'distributivo', activity: act }
-                        });
-                    }
-                });
-
-                // 2) Bloques de Doctorado (Supabase)
                 await Promise.all(dates.map(async ds => {
-                    try {
-                        const r = await fetch('/api/tareas/' + ds);
-                        const j = await r.json();
-                        const tareas = j.data || [];
-                        RESEARCH_BLOCKS.forEach(b => {
-                            const t = tareas.find(x => x.bloque_id === b.id);
-                            const desc = t ? t.descripcion : b.default;
-                            const [st, en] = b.time.split(' - ');
-                            const c = getColor('', 'doctorado');
+                    const jsDay = new Date(ds + 'T12:00:00').getDay();
+                    const isWeekend = (jsDay === 0 || jsDay === 6);
+                    let tareas = [];
+                    try { const r = await fetch('/api/tareas/' + ds); const j = await r.json(); tareas = j.data || [] } catch (e) { }
+
+                    // 1) Distributivo docente (Mon-Fri only)
+                    if (!isWeekend && SCHEDULE[jsDay]) {
+                        for (const [hr, act] of Object.entries(SCHEDULE[jsDay])) {
+                            const bId = workBloqueId(jsDay, hr);
+                            const saved = tareas.find(t => t.bloque_id === bId);
+                            const c = getColor(act, 'distributivo');
+                            const eh = String(parseInt(hr) + 1).padStart(2, '0') + ':00';
                             all.push({
-                                title: b.name + ': ' + desc,
-                                start: ds + 'T' + st + ':00', end: ds + 'T' + en + ':00',
+                                title: '🏛️ ' + act,
+                                start: ds + 'T' + hr + ':00', end: ds + 'T' + eh + ':00',
                                 backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
-                                extendedProps: { source: 'doctorado', bloqueId: b.id, fecha: ds, descripcion: desc, blockName: b.name }
+                                extendedProps: {
+                                    source: 'distributivo', activity: act, bloqueId: bId, fecha: ds,
+                                    descripcion: saved ? saved.descripcion : '', tareaGuardada: saved ? saved.descripcion : ''
+                                }
                             });
+                        }
+                    }
+
+                    // 2) Bloques de investigación
+                    RESEARCH_BLOCKS.forEach(b => {
+                        const saved = tareas.find(t => t.bloque_id === b.id);
+                        // Weekend: only show if saved in Supabase
+                        if (isWeekend && !saved) return;
+                        const desc = saved ? saved.descripcion : b.default;
+                        const [st, en] = b.time.split('-');
+                        const c = getColor('', 'doctorado');
+                        all.push({
+                            title: b.name + ': ' + desc,
+                            start: ds + 'T' + st + ':00', end: ds + 'T' + en + ':00',
+                            backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
+                            extendedProps: {
+                                source: 'doctorado', bloqueId: b.id, fecha: ds,
+                                descripcion: desc, blockName: b.name, tareaGuardada: saved ? saved.descripcion : ''
+                            }
                         });
-                    } catch (e) { console.error('Research error ' + ds, e); }
+                    });
                 }));
 
-                // 3) Google Calendar (externos)
+                // 3) Google Calendar (external)
                 if (accessToken) {
                     await Promise.all(dates.map(async ds => {
                         try {
@@ -448,59 +446,65 @@
                                     end: isAll ? ds : ds + 'T' + ev.hora_fin + ':00',
                                     allDay: isAll,
                                     backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
-                                    extendedProps: { source: 'external', titulo: ev.titulo }
+                                    extendedProps: { source: 'external', titulo: ev.titulo, fecha: ds, bloqueId: 'ext_' + Date.now(), descripcion: ev.titulo }
                                 });
                             });
-                        } catch (e) { console.error('Calendar error ' + ds, e); }
+                        } catch (e) { }
                     }));
                 }
                 successCb(all);
-            } catch (e) { failureCb(e); }
+            } catch (e) { failureCb(e) }
         }
 
         // ==========================================
         // COMMAND CENTER
         // ==========================================
-        function updateCommandCenter(events) {
+        function updateCC(events) {
             const box = document.getElementById('cc-events');
             const today = fmtDate(new Date());
-            const critical = events.filter(ev => {
+            const crit = events.filter(ev => {
                 const d = (ev.startStr || ev.start || '').substring(0, 10);
                 if (d !== today) return false;
                 const p = ev.extendedProps || {};
                 const a = p.activity || '';
                 return a.includes('Consejo Consultivo') || a.includes('Evaluación') || p.source === 'external';
             });
-            if (!critical.length) { box.innerHTML = '<div class="cc-empty">✅ No hay alertas críticas para hoy.</div>'; return; }
-            box.innerHTML = critical.map(ev => {
-                const p = ev.extendedProps || {};
-                const a = p.activity || '';
+            if (!crit.length) { box.innerHTML = '<div class="cc-empty">✅ No hay alertas críticas para hoy.</div>'; return }
+            box.innerHTML = crit.map(ev => {
+                const p = ev.extendedProps || {}; const a = p.activity || '';
                 let dot = '#475569';
                 if (a.includes('Consejo Consultivo')) dot = '#e11d48';
                 else if (a.includes('Evaluación')) dot = '#16a34a';
-                const timeStr = (ev.startStr || ev.start || '');
-                const hhmm = timeStr.includes('T') ? timeStr.split('T')[1].substring(0, 5) : 'Todo el día';
-                const title = ev.title || p.titulo || '(Sin título)';
-                return `<div class="cc-card"><span class="cc-dot" style="background:${dot}"></span><div><div class="cc-time">${hhmm}</div><div class="cc-title">${title}</div></div></div>`;
+                const ts = (ev.startStr || ev.start || '');
+                const hh = ts.includes('T') ? ts.split('T')[1].substring(0, 5) : 'Todo el día';
+                return `<div class="cc-card"><span class="cc-dot" style="background:${dot}"></span><div><div class="cc-time">${hh}</div><div class="cc-title">${ev.title}</div></div></div>`;
             }).join('');
         }
 
         // ==========================================
-        // ARRANQUE: Config + Google Auth
+        // GUARDAR TAREA EN SUPABASE
+        // ==========================================
+        async function guardarTarea(fecha, bloqueId, descripcion) {
+            await fetch('/api/tareas', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fecha, bloque_id: bloqueId, descripcion })
+            });
+            if (calendar) calendar.refetchEvents();
+        }
+
+        // ==========================================
+        // ARRANQUE + GOOGLE AUTH
         // ==========================================
         async function iniciarApp() {
             try {
                 document.getElementById('auth-status').innerText = '🔐 Cargando credenciales...';
-                const res = await fetch('/api/config');
-                const cfg = await res.json();
+                const r = await fetch('/api/config'); const cfg = await r.json();
                 CLIENT_ID = cfg.GOOGLE_CLIENT_ID;
                 if (!CLIENT_ID) throw new Error('No CLIENT_ID');
-                loadGoogleApis();
-                initCalendar();
+                loadGoogleApis(); initCalendar();
                 document.getElementById('auth-status').innerText = '🔴 Listo para conectar';
             } catch (e) {
-                console.error(e);
-                const s = document.getElementById('auth-status');
+                console.error(e); const s = document.getElementById('auth-status');
                 s.innerText = '⚠️ Error leyendo .env'; s.style.background = '#fee2e2'; s.style.color = '#991b1b';
             }
         }
@@ -525,80 +529,98 @@
             };
             document.head.appendChild(s);
         }
-
-        document.getElementById('btn-login').onclick = () => { if (tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' }); };
-        document.getElementById('btn-logout').onclick = () => { accessToken = null; location.reload(); };
+        document.getElementById('btn-login').onclick = () => { if (tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' }) };
+        document.getElementById('btn-logout').onclick = () => { accessToken = null; location.reload() };
 
         // ==========================================
-        // FULLCALENDAR INIT
+        // FULLCALENDAR
         // ==========================================
         function initCalendar() {
-            const el = document.getElementById('calendar');
-            calendar = new FullCalendar.Calendar(el, {
+            calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
                 locale: 'es',
                 initialView: 'timeGridWeek',
                 headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
-                slotMinTime: '07:00:00',
-                slotMaxTime: '23:30:00',
-                scrollTime: '07:00:00',
-                height: 700,
-                nowIndicator: true,
-                allDaySlot: true,
-                allDayText: 'Día',
-                slotDuration: '00:30:00',
-                slotLabelInterval: '01:00:00',
-                expandRows: true,
-                dayMaxEvents: true,
+                slotMinTime: '07:00:00', slotMaxTime: '23:30:00', scrollTime: '07:00:00',
+                height: 700, nowIndicator: true, allDaySlot: true, allDayText: 'Día',
+                slotDuration: '00:30:00', slotLabelInterval: '01:00:00',
+                expandRows: true, dayMaxEvents: true,
                 events: loadAllEvents,
-                eventsSet: function (events) { updateCommandCenter(events); },
+                eventsSet: function (events) { updateCC(events) },
+
+                // Renderizado con tarea guardada
+                eventContent: function (arg) {
+                    const p = arg.event.extendedProps;
+                    const task = p.tareaGuardada;
+                    let h = '<div style="font-size:.72rem;line-height:1.3;padding:1px;overflow:hidden">';
+                    h += '<b>' + arg.event.title + '</b>';
+                    if (task) h += '<br><span style="opacity:.85;font-size:.67rem">📋 ' + task + '</span>';
+                    h += '</div>';
+                    return { html: h };
+                },
+
+                // Click en cualquier evento => editar detalle en Supabase
                 eventClick: function (info) {
+                    info.jsEvent.preventDefault();
                     const p = info.event.extendedProps;
-                    if (p.source === 'doctorado') {
-                        const nueva = prompt('✏️ Editar tarea (' + p.blockName + ') para ' + p.fecha + ':', p.descripcion);
-                        if (nueva !== null && nueva.trim()) {
-                            fetch('/api/tareas', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ fecha: p.fecha, bloque_id: p.bloqueId, descripcion: nueva.trim() })
-                            }).then(() => calendar.refetchEvents()).catch(e => { alert('Error al guardar'); console.error(e); });
-                        }
+                    if (p.source === 'external') return; // externos no se editan
+                    const label = p.source === 'doctorado' ? p.blockName : (p.activity || 'Actividad');
+                    const current = p.descripcion || '';
+                    const nueva = prompt('✏️ Editar Detalle/Objetivo de "' + label + '" (' + p.fecha + '):', current);
+                    if (nueva !== null && nueva.trim()) {
+                        guardarTarea(p.fecha, p.bloqueId, nueva.trim());
                     }
+                },
+
+                // Click en espacio vacío => activar bloque de investigación en fin de semana
+                dateClick: function (info) {
+                    const day = info.date.getDay();
+                    if (day !== 0 && day !== 6) return; // solo fines de semana
+                    const fecha = fmtDate(info.date);
+                    const choice = prompt(
+                        '📚 Activar bloque de investigación en fin de semana:\n' +
+                        '1. 🔬 Inv. profunda (07:30-09:00)\n' +
+                        '2. ✍️ Escritura (09:00-10:30)\n' +
+                        '3. 📋 Gestión (10:30-11:30)\n' +
+                        '4. 🌙 Revisión (22:20-23:20)\n\n' +
+                        'Elige (1-4):'
+                    );
+                    if (!choice) return;
+                    const idx = parseInt(choice) - 1;
+                    if (idx < 0 || idx > 3) { alert('Opción no válida.'); return }
+                    const block = RESEARCH_BLOCKS[idx];
+                    const desc = prompt('Detalle/Objetivo para "' + block.name + '":', block.default);
+                    if (!desc || !desc.trim()) return;
+                    guardarTarea(fecha, block.id, desc.trim());
                 }
             });
             calendar.render();
         }
 
         // ==========================================
-        // SINCRONIZACIÓN MASIVA SEMESTRE
+        // SINCRONIZACIÓN MASIVA
         // ==========================================
         document.getElementById('btn-sync-semester').onclick = async () => {
-            if (!accessToken) { alert('⚠️ Conecta Google Calendar primero.'); return; }
-            const semestreId = prompt('ID del semestre (ej: 2026A):', '2026A');
-            if (!semestreId) return;
-            const fechaInicio = prompt('Fecha INICIO (YYYY-MM-DD):', fmtDate(new Date()));
-            if (!fechaInicio) return;
-            const fechaFin = prompt('Fecha FIN (YYYY-MM-DD):', '2026-08-31');
-            if (!fechaFin) return;
+            if (!accessToken) { alert('⚠️ Conecta Google Calendar primero.'); return }
+            const sem = prompt('ID del semestre (ej: 2026A):', '2026A'); if (!sem) return;
+            const fi = prompt('Fecha INICIO (YYYY-MM-DD):', '2026-04-06'); if (!fi) return;
+            const ff = prompt('Fecha FIN (YYYY-MM-DD):', '2026-07-31'); if (!ff) return;
             const btn = document.getElementById('btn-sync-semester');
-            const orig = btn.innerHTML;
-            btn.innerHTML = '⏳ Sincronizando...'; btn.disabled = true;
+            const orig = btn.innerHTML; btn.innerHTML = '⏳ Sincronizando...'; btn.disabled = true;
             try {
                 const r = await fetch('/api/sincronizar-semestre', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: accessToken, fecha_inicio: fechaInicio, fecha_fin: fechaFin, semestre_id: semestreId })
+                    body: JSON.stringify({ token: accessToken, fecha_inicio: fi, fecha_fin: ff, semestre_id: sem })
                 });
                 const d = await r.json();
                 if (d.status === 'success') {
-                    alert('✅ ¡Éxito!\n\n📅 Creados: ' + d.eventos_creados + '\n🔄 Actualizados: ' + d.eventos_actualizados + (d.errores > 0 ? '\n⚠️ Errores: ' + d.errores : '') + '\n\nSemestre: ' + semestreId);
+                    alert('✅ ¡Éxito!\n\n📅 Creados: ' + d.eventos_creados + '\n🔄 Actualizados: ' + d.eventos_actualizados +
+                        (d.errores > 0 ? '\n⚠️ Errores: ' + d.errores : '') + '\n\nSemestre: ' + sem);
                     calendar.refetchEvents();
-                } else { alert('Error: ' + (d.mensaje || 'desconocido')); }
-            } catch (e) { console.error(e); alert('Error de conexión.'); }
-            finally { btn.innerHTML = orig; btn.disabled = false; }
+                } else { alert('Error: ' + (d.mensaje || 'desconocido')) }
+            } catch (e) { console.error(e); alert('Error de conexión.') }
+            finally { btn.innerHTML = orig; btn.disabled = false }
         };
 
-        // ==========================================
-        // INICIALIZACIÓN
-        // ==========================================
         iniciarApp();
     </script>
 </body>
