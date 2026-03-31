@@ -2,7 +2,7 @@ import os
 import re
 import base64
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -197,6 +197,62 @@ def sincronizar_semestre(req: SyncCiclo):
         "eventos_actualizados": actualizados,
         "errores": errores,
     }
+
+# 4. Leer eventos de Google Calendar para un día específico (Fase 1 bidireccional)
+@app.get("/api/calendario/eventos/{fecha}")
+def obtener_eventos_calendario(fecha: str, request: Request):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token de autorización requerido")
+
+    headers = {
+        "Authorization": auth_header,
+        "Content-Type": "application/json",
+    }
+
+    # Construir rango del día completo en America/Guayaquil (UTC-5)
+    time_min = f"{fecha}T00:00:00-05:00"
+    time_max = f"{fecha}T23:59:59-05:00"
+
+    params = {
+        "timeMin": time_min,
+        "timeMax": time_max,
+        "singleEvents": "true",
+        "orderBy": "startTime",
+    }
+
+    res = requests.get(GCAL_BASE, headers=headers, params=params)
+
+    if res.status_code != 200:
+        raise HTTPException(
+            status_code=res.status_code,
+            detail=f"Error de Google Calendar: {res.text[:200]}"
+        )
+
+    items = res.json().get("items", [])
+    eventos = []
+    for item in items:
+        start = item.get("start", {})
+        end = item.get("end", {})
+        # Soportar eventos de día completo (date) y eventos con hora (dateTime)
+        hora_inicio = start.get("dateTime", start.get("date", ""))
+        hora_fin = end.get("dateTime", end.get("date", ""))
+
+        # Extraer solo HH:MM si es dateTime ISO
+        if "T" in hora_inicio:
+            hora_inicio = hora_inicio.split("T")[1][:5]
+        if "T" in hora_fin:
+            hora_fin = hora_fin.split("T")[1][:5]
+
+        eventos.append({
+            "titulo": item.get("summary", "(Sin título)"),
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "descripcion": item.get("description", ""),
+            "origen_app": item.get("extendedProperties", {}).get("private", {}).get("origenApp", ""),
+        })
+
+    return {"data": eventos, "total": len(eventos)}
 
 # Nuevo endpoint para enviar la configuración al frontend
 @app.get("/api/config")

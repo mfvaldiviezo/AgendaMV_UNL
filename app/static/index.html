@@ -240,6 +240,70 @@
             background: #eef2ff;
             color: #1e40af;
         }
+
+        /* Eventos externos de Google Calendar */
+        .external-events-section {
+            margin-top: 40px;
+            margin-bottom: 30px;
+        }
+
+        .external-event-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid #4285f4;
+            border-radius: 14px;
+            padding: 14px 18px;
+            margin-bottom: 10px;
+            transition: box-shadow 0.2s;
+        }
+
+        .external-event-card:hover {
+            box-shadow: 0 4px 12px rgba(66, 133, 244, 0.12);
+        }
+
+        .external-event-card.from-app {
+            border-left-color: #16a34a;
+        }
+
+        .event-time-badge {
+            background: #e0e7ff;
+            color: #3730a3;
+            font-weight: 700;
+            font-size: 0.82rem;
+            padding: 6px 12px;
+            border-radius: 10px;
+            white-space: nowrap;
+            min-width: 110px;
+            text-align: center;
+        }
+
+        .event-title {
+            font-size: 0.92rem;
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .event-app-tag {
+            background: #dcfce7;
+            color: #166534;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 8px;
+            margin-left: auto;
+            white-space: nowrap;
+        }
+
+        .external-empty {
+            text-align: center;
+            padding: 20px;
+            color: #94a3b8;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 
@@ -269,6 +333,13 @@
 
         <h2 style="margin-bottom: 20px; color: #0f2b3d;">🧠 Bloques del día seleccionado (Investigación Doctoral)</h2>
         <div class="grid" id="tasks-container">
+        </div>
+
+        <div class="external-events-section">
+            <h2 style="margin-bottom: 20px; color: #0f2b3d;">📅 Otros eventos en Google Calendar</h2>
+            <div id="external-events-container">
+                <div class="external-empty">🔌 Conecta tu calendario para ver eventos externos.</div>
+            </div>
         </div>
 
         <h2 style="margin-top: 40px; margin-bottom: 20px; color: #0f2b3d;">🏛️ Jornada laboral universitaria
@@ -389,6 +460,66 @@
                 });
             } catch (error) {
                 console.error("Error cargando las tareas de la base de datos:", error);
+            }
+
+            // Cargar eventos externos de Google Calendar
+            cargarEventosExternos(fecha);
+        }
+
+        // ==========================================
+        // 3b. EVENTOS EXTERNOS DE GOOGLE CALENDAR
+        // ==========================================
+        async function cargarEventosExternos(fecha) {
+            const container = document.getElementById("external-events-container");
+
+            if (!accessToken) {
+                container.innerHTML = '<div class="external-empty">🔌 Conecta tu calendario para ver eventos externos.</div>';
+                return;
+            }
+
+            container.innerHTML = '<div class="external-empty">⏳ Cargando eventos del calendario...</div>';
+
+            try {
+                const res = await fetch(`/api/calendario/eventos/${fecha}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        container.innerHTML = '<div class="external-empty">⚠️ Token expirado. Reconecta tu Google Calendar.</div>';
+                    } else {
+                        container.innerHTML = '<div class="external-empty">❌ Error al consultar Google Calendar.</div>';
+                    }
+                    return;
+                }
+
+                const data = await res.json();
+                const eventos = data.data || [];
+
+                if (eventos.length === 0) {
+                    container.innerHTML = '<div class="external-empty">📭 No hay eventos en el calendario para este día.</div>';
+                    return;
+                }
+
+                let html = '';
+                eventos.forEach(ev => {
+                    const isFromApp = ev.origen_app === 'agendaDoctoral';
+                    const timeLabel = ev.hora_inicio.includes('-')
+                        ? '📆 Todo el día'
+                        : `${ev.hora_inicio} — ${ev.hora_fin}`;
+
+                    html += `
+                    <div class="external-event-card${isFromApp ? ' from-app' : ''}">
+                        <div class="event-time-badge">${timeLabel}</div>
+                        <div class="event-title">${ev.titulo}</div>
+                        ${isFromApp ? '<span class="event-app-tag">📌 Agenda Doctoral</span>' : ''}
+                    </div>`;
+                });
+                container.innerHTML = html;
+
+            } catch (error) {
+                console.error("Error cargando eventos externos:", error);
+                container.innerHTML = '<div class="external-empty">❌ Error de conexión con el servidor.</div>';
             }
         }
 
