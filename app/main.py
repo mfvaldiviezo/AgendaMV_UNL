@@ -130,7 +130,36 @@ def guardar_tarea(tarea: Tarea):
         supabase.table("tareas").insert([tarea.dict()]).execute()
     return {"status": "success"}
 
-# 3. Sincronización Masiva del Semestre a Google Calendar (UPSERT + RRULE)
+# 2b. Borrar tarea de Supabase (y opcionalmente de Google Calendar)
+@app.delete("/api/tareas/{fecha}/{bloque_id}")
+def borrar_tarea(fecha: str, bloque_id: str, request: Request):
+    # Borrar de Supabase
+    resultado = supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+
+    # Si hay token de Google, intentar borrar el evento de Calendar
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+        # Intentar con IDs de trabajo (work_X_HHMM) para buscar evento recurrente
+        # Los eventos del distributivo usan IDs deterministas generados por generate_event_id
+        # Los bloques de investigación no tienen evento en Google Calendar
+        try:
+            # Para bloques de trabajo, intentar derivar el event_id de Google Calendar
+            if bloque_id.startswith("work_"):
+                parts = bloque_id.split("_")  # work_1_1300
+                if len(parts) == 3:
+                    day_idx = int(parts[1]) - 1  # JS day (1=Mon) → Python weekday (0=Mon)
+                    hora = parts[2][:2] + ":" + parts[2][2:]
+                    # Intentar borrar con todos los semestres comunes
+                    for sem in ["2026a", "2026b"]:
+                        event_id = generate_event_id(day_idx, hora, sem)
+                        requests.delete(f"{GCAL_BASE}/{event_id}", headers=headers)
+        except Exception:
+            pass  # No fallar si Google Calendar no responde
+
+    deleted_count = len(resultado.data) if resultado.data else 0
+    return {"status": "success", "deleted": deleted_count}
+
 @app.post("/api/sincronizar-semestre")
 def sincronizar_semestre(req: SyncCiclo):
     headers = {

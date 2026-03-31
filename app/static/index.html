@@ -122,6 +122,15 @@
             background: #f1f5f9
         }
 
+        .btn-danger {
+            background: #dc2626;
+            color: #fff
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c
+        }
+
         .legend {
             display: flex;
             flex-wrap: wrap;
@@ -222,6 +231,123 @@
             overflow: hidden
         }
 
+        /* Modal Editor */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, .6);
+            backdrop-filter: blur(4px);
+            z-index: 9998;
+            justify-content: center;
+            align-items: center;
+            padding: 16px
+        }
+
+        .modal-overlay.active {
+            display: flex
+        }
+
+        .modal {
+            background: #fff;
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, .25);
+            width: 100%;
+            max-width: 520px;
+            overflow: hidden;
+            animation: modalIn .25s ease
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(.97)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1)
+            }
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #0f2b3d, #1e3a5f);
+            color: #fff;
+            padding: 18px 22px
+        }
+
+        .modal-header h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 4px
+        }
+
+        .modal-header p {
+            font-size: .78rem;
+            opacity: .8
+        }
+
+        .modal-body {
+            padding: 20px 22px
+        }
+
+        .modal-label {
+            font-size: .78rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 8px;
+            display: block
+        }
+
+        .modal-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 14px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: .88rem;
+            font-family: 'Inter', system-ui, sans-serif;
+            resize: vertical;
+            outline: none;
+            transition: border-color .2s;
+            line-height: 1.5;
+            color: #1e293b
+        }
+
+        .modal-textarea:focus {
+            border-color: #3b82f6
+        }
+
+        .modal-textarea::placeholder {
+            color: #94a3b8
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            padding: 0 22px 20px;
+            flex-wrap: wrap
+        }
+
+        .modal-footer button {
+            flex: 1;
+            min-width: 100px;
+            justify-content: center;
+            padding: 11px 16px;
+            font-size: .82rem;
+            border-radius: 14px
+        }
+
+        .modal-color-badge {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle
+        }
+
+        /* FullCalendar overrides */
         .fc {
             font-family: 'Inter', system-ui, sans-serif !important
         }
@@ -339,8 +465,31 @@
         </div>
     </div>
 
+    <!-- Modal de edición -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">✏️ Editar Actividad</h3>
+                <p id="modal-subtitle">Fecha · Bloque</p>
+            </div>
+            <div class="modal-body">
+                <label class="modal-label">📋 Detalle / Objetivo:</label>
+                <textarea class="modal-textarea" id="modal-textarea"
+                    placeholder="Escribe aquí los detalles de la actividad, avances de tesis, notas de clase..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-danger" id="modal-btn-delete">🗑️ Borrar</button>
+                <button class="btn-outline" id="modal-btn-cancel">Cancelar</button>
+                <button class="btn-primary" id="modal-btn-save">💾 Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let CLIENT_ID = '', tokenClient = null, accessToken = null, calendar = null;
+
+        // Estado del modal
+        let modalState = { fecha: '', bloqueId: '', source: '', activity: '' };
 
         const RESEARCH_BLOCKS = [
             { id: 'research_1', name: '🔬 Inv. profunda', time: '07:30-09:00', default: 'Revisar literatura y modelos de IA para control de señales de tráfico' },
@@ -372,8 +521,57 @@
         }
 
         function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
-
         function workBloqueId(jsDay, hour) { return 'work_' + jsDay + '_' + hour.replace(':', '') }
+
+        // ==========================================
+        // MODAL
+        // ==========================================
+        function openModal(title, subtitle, currentText, fecha, bloqueId, source, activity) {
+            modalState = { fecha, bloqueId, source, activity };
+            document.getElementById('modal-title').textContent = '✏️ ' + title;
+            document.getElementById('modal-subtitle').textContent = fecha + ' · ' + bloqueId;
+            document.getElementById('modal-textarea').value = currentText || '';
+            document.getElementById('modal-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('modal-textarea').focus(), 100);
+        }
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('active');
+            modalState = { fecha: '', bloqueId: '', source: '', activity: '' };
+        }
+
+        // Guardar
+        document.getElementById('modal-btn-save').onclick = async () => {
+            const desc = document.getElementById('modal-textarea').value.trim();
+            if (!desc) { alert('El detalle no puede estar vacío.'); return }
+            try {
+                await fetch('/api/tareas', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: modalState.bloqueId, descripcion: desc })
+                });
+                closeModal();
+                if (calendar) calendar.refetchEvents();
+            } catch (e) { alert('Error al guardar.'); console.error(e) }
+        };
+
+        // Borrar
+        document.getElementById('modal-btn-delete').onclick = async () => {
+            if (!confirm('⚠️ ¿Estás seguro de borrar esta actividad?\n\nSe eliminará de Supabase' +
+                (accessToken ? ' y se intentará borrar de Google Calendar.' : '.'))) return;
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+                await fetch('/api/tareas/' + modalState.fecha + '/' + encodeURIComponent(modalState.bloqueId), {
+                    method: 'DELETE', headers
+                });
+                closeModal();
+                if (calendar) calendar.refetchEvents();
+            } catch (e) { alert('Error al borrar.'); console.error(e) }
+        };
+
+        // Cancelar / overlay click
+        document.getElementById('modal-btn-cancel').onclick = closeModal;
+        document.getElementById('modal-overlay').onclick = function (e) { if (e.target === this) closeModal() };
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal() });
 
         // ==========================================
         // CARGA DE EVENTOS
@@ -390,7 +588,7 @@
                     let tareas = [];
                     try { const r = await fetch('/api/tareas/' + ds); const j = await r.json(); tareas = j.data || [] } catch (e) { }
 
-                    // 1) Distributivo docente (Mon-Fri only)
+                    // 1) Distributivo docente (Mon-Fri)
                     if (!isWeekend && SCHEDULE[jsDay]) {
                         for (const [hr, act] of Object.entries(SCHEDULE[jsDay])) {
                             const bId = workBloqueId(jsDay, hr);
@@ -412,7 +610,6 @@
                     // 2) Bloques de investigación
                     RESEARCH_BLOCKS.forEach(b => {
                         const saved = tareas.find(t => t.bloque_id === b.id);
-                        // Weekend: only show if saved in Supabase
                         if (isWeekend && !saved) return;
                         const desc = saved ? saved.descripcion : b.default;
                         const [st, en] = b.time.split('-');
@@ -446,7 +643,7 @@
                                     end: isAll ? ds : ds + 'T' + ev.hora_fin + ':00',
                                     allDay: isAll,
                                     backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
-                                    extendedProps: { source: 'external', titulo: ev.titulo, fecha: ds, bloqueId: 'ext_' + Date.now(), descripcion: ev.titulo }
+                                    extendedProps: { source: 'external', titulo: ev.titulo, fecha: ds }
                                 });
                             });
                         } catch (e) { }
@@ -465,8 +662,7 @@
             const crit = events.filter(ev => {
                 const d = (ev.startStr || ev.start || '').substring(0, 10);
                 if (d !== today) return false;
-                const p = ev.extendedProps || {};
-                const a = p.activity || '';
+                const p = ev.extendedProps || {}; const a = p.activity || '';
                 return a.includes('Consejo Consultivo') || a.includes('Evaluación') || p.source === 'external';
             });
             if (!crit.length) { box.innerHTML = '<div class="cc-empty">✅ No hay alertas críticas para hoy.</div>'; return }
@@ -482,18 +678,7 @@
         }
 
         // ==========================================
-        // GUARDAR TAREA EN SUPABASE
-        // ==========================================
-        async function guardarTarea(fecha, bloqueId, descripcion) {
-            await fetch('/api/tareas', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fecha, bloque_id: bloqueId, descripcion })
-            });
-            if (calendar) calendar.refetchEvents();
-        }
-
-        // ==========================================
-        // ARRANQUE + GOOGLE AUTH
+        // APP INIT + GOOGLE AUTH
         // ==========================================
         async function iniciarApp() {
             try {
@@ -508,7 +693,6 @@
                 s.innerText = '⚠️ Error leyendo .env'; s.style.background = '#fee2e2'; s.style.color = '#991b1b';
             }
         }
-
         function loadGoogleApis() {
             const s = document.createElement('script');
             s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true;
@@ -547,7 +731,6 @@
                 events: loadAllEvents,
                 eventsSet: function (events) { updateCC(events) },
 
-                // Renderizado con tarea guardada
                 eventContent: function (arg) {
                     const p = arg.event.extendedProps;
                     const task = p.tareaGuardada;
@@ -558,39 +741,32 @@
                     return { html: h };
                 },
 
-                // Click en cualquier evento => editar detalle en Supabase
+                // Click en evento → abrir modal (no prompt)
                 eventClick: function (info) {
                     info.jsEvent.preventDefault();
                     const p = info.event.extendedProps;
                     if (p.source === 'external') return; // externos no se editan
                     const label = p.source === 'doctorado' ? p.blockName : (p.activity || 'Actividad');
-                    const current = p.descripcion || '';
-                    const nueva = prompt('✏️ Editar Detalle/Objetivo de "' + label + '" (' + p.fecha + '):', current);
-                    if (nueva !== null && nueva.trim()) {
-                        guardarTarea(p.fecha, p.bloqueId, nueva.trim());
-                    }
+                    openModal(label, p.fecha + ' · ' + p.bloqueId, p.descripcion || '', p.fecha, p.bloqueId, p.source, p.activity || '');
                 },
 
-                // Click en espacio vacío => activar bloque de investigación en fin de semana
+                // Click en espacio vacío (fin de semana) → agregar bloque de investigación
                 dateClick: function (info) {
                     const day = info.date.getDay();
-                    if (day !== 0 && day !== 6) return; // solo fines de semana
+                    if (day !== 0 && day !== 6) return;
                     const fecha = fmtDate(info.date);
                     const choice = prompt(
                         '📚 Activar bloque de investigación en fin de semana:\n' +
                         '1. 🔬 Inv. profunda (07:30-09:00)\n' +
                         '2. ✍️ Escritura (09:00-10:30)\n' +
                         '3. 📋 Gestión (10:30-11:30)\n' +
-                        '4. 🌙 Revisión (22:20-23:20)\n\n' +
-                        'Elige (1-4):'
+                        '4. 🌙 Revisión (22:20-23:20)\n\nElige (1-4):'
                     );
                     if (!choice) return;
                     const idx = parseInt(choice) - 1;
                     if (idx < 0 || idx > 3) { alert('Opción no válida.'); return }
                     const block = RESEARCH_BLOCKS[idx];
-                    const desc = prompt('Detalle/Objetivo para "' + block.name + '":', block.default);
-                    if (!desc || !desc.trim()) return;
-                    guardarTarea(fecha, block.id, desc.trim());
+                    openModal(block.name, fecha + ' · ' + block.id, block.default, fecha, block.id, 'doctorado', block.name);
                 }
             });
             calendar.render();
