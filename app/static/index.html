@@ -1365,24 +1365,23 @@
                         .replace(/\*\*(.*?)\*\*/g, '<b style="color:#fff">$1</b>')
                         .replace(/\*(.*?)\*/g, '<i style="color:#cbd5e1">$1</i>');
 
+                    let currentStyle = "border-left:3px solid #334155;";
                     html = html.split('\n\n').map(p => {
-                        if (p.trim().startsWith('<h')) return p;
-                        if (p.trim().length === 0) return '';
-
-                        let pStyle = "margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;border-left:3px solid #334155;";
-                        const upperLine = p.toUpperCase();
-                        if (upperLine.includes('EXTERNO') || upperLine.includes('CRÍTICA') || upperLine.includes('EXTERNOS')) {
-                            pStyle = "margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;border-left:10px solid #ef4444;";
-                        } else if (upperLine.includes('INVESTIGACIÓN') || upperLine.includes('INV/')) {
-                            pStyle = "margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;border-left:3px solid #8b5cf6;";
-                        } else if (upperLine.includes('DOCENCIA') || upperLine.includes('GESTIÓN')) {
-                            pStyle = "margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;border-left:3px solid #3b82f6;";
+                        const trimmed = p.trim();
+                        if (trimmed.startsWith('<h')) {
+                            const upperH = trimmed.toUpperCase();
+                            if (upperH.includes('CRÍTICO')) currentStyle = "border-left:6px solid #ef4444;";
+                            else if (upperH.includes('INVESTIGACIÓN') || upperH.includes('DOCENCIA')) currentStyle = "border-left:4px solid #8b5cf6;";
+                            else if (upperH.includes('ANTICIPO')) currentStyle = "border-left:4px solid #facc15;";
+                            else currentStyle = "border-left:3px solid #334155;";
+                            return p;
                         }
+                        if (trimmed.length === 0) return '';
 
                         let parsedText = p.replace(/\[([^\]]+)\]/g, '<span style="font-family:\'Courier New\', Courier, monospace;background:#1e293b;padding:2px 8px;border-radius:4px;color:#94a3b8;font-size:0.85rem;margin:0 6px;letter-spacing:0.5px">[$1]</span>');
-                        parsedText = parsedText.replace(/(PRIORIDAD CRÍTICA|EXTERNOS:|INVESTIGACIÓN:|DOCENCIA Y GESTIÓN:)/g, '<strong style="color:#f8fafc">$1</strong>');
+                        parsedText = parsedText.replace(/(CRÍTICO|INVESTIGACIÓN|DOCENCIA|GESTIÓN|ANTICIPO)/g, '<strong style="color:#ffffff">$1</strong>');
 
-                        return `<div style="${pStyle}">${parsedText.replace(/\n/g, '<br>')}</div>`;
+                        return `<div style="margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;${currentStyle}">${parsedText.replace(/\n/g, '<br>')}</div>`;
                     }).join('');
 
                     body.innerHTML = `<div style="width:100%;font-size:0.95rem">${html}</div>`;

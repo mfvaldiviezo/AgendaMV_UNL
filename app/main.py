@@ -689,20 +689,22 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
 
         user_prompt = f"Agenda de la Semana ({req.semana_iso}):\n" + "\n".join(agenda_semana)
         
+        ecuador_tz = pytz.timezone('America/Guayaquil')
+        hoy_real = datetime.now(ecuador_tz).date()
+        manana_real = hoy_real + timedelta(days=1)
+
         system_prompt = (
-            f"Eres el Arquitecto Técnico de la agenda de Marcelo.\n\n"
-            f"Contexto: {obtener_contexto_proyectos()}\n\n"
-            f"PROHIBICIÓN ESTRICTA: No menciones nombres de proyectos específicos como SABIA, YOLO, etc. Usa únicamente las categorías mayores: CRÍTICO, INVESTIGACIÓN, DOCENCIA, GESTIÓN.\n\n"
-            f"PRIORIDAD MÁXIMA ABSOLUTA: Si hay eventos marcados con [EXTERNO GCAL] (ej. Reuniones, Proyecto Café), DEBEN ir primero en el resumen bajo la rúbrica CRÍTICO.\n\n"
-            f"ALINEACIÓN VISUAL: El resumen debe basarse estrictamente en los bloques del horario.\n\n"
-            f"Estructura EXACTA (Cero prosa, usa Markdown):\n\n"
-            f"## CRÍTICO (EVENTOS EXTERNOS):\n"
-            f"[Día - Hora] [Título]\n\n"
-            f"## INVESTIGACIÓN:\n"
-            f"[Día - Rango Hora] [Avance breve].\n\n"
-            f"## DOCENCIA Y GESTIÓN:\n"
-            f"[Resumen de la docencia y gestión]\n\n"
-            f"Tono: Terminal hacker, directo. Máximo 180 palabras."
+            f"Eres el Asistente Ejecutivo de Marcelo. Hoy es {hoy_real.strftime('%Y-%m-%d')}.\n"
+            f"Contexto RAG: {obtener_contexto_proyectos()}\n\n"
+            f"Instrucción Estricta: No listes toda la semana. Analiza la agenda dada per SOLO identifica lo siguiente:\n\n"
+            f"Estructura EXACTA (Usa Markdown y estos Emojis, no repitas fechas en cada línea):\n\n"
+            f"## 🔴 CRÍTICO:\n"
+            f"- [Hora] [Eventos de Google Calendar de HOY {hoy_real.strftime('%Y-%m-%d')}].\n\n"
+            f"## 🔬 INVESTIGACIÓN / 🎓 DOCENCIA:\n"
+            f"- [Hora] [Máximo 2 hitos importantes de HOY {hoy_real.strftime('%Y-%m-%d')}].\n\n"
+            f"## ⚡ ANTICIPO:\n"
+            f"- [Solo 1 línea sobre lo más importante de MAÑANA {manana_real.strftime('%Y-%m-%d')}].\n\n"
+            f"Tono: Ejecutivo, directo. MÁXIMO 100 palabras."
         )
 
         try:
@@ -743,3 +745,8 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
 
 # Servir el Frontend estático
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi.responses import Response
+    return Response(status_code=204)
