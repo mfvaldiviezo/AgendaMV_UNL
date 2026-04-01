@@ -698,6 +698,7 @@
                 <button id="btn-ia-plan" class="btn-ia">✨ Planificar Semana con IA</button>
                 <button id="btn-briefing" class="btn-briefing">🌅 Resumen del Día</button>
                 <button id="btn-sync-semester" class="btn-primary">⚡ Sincronizar Semestre</button>
+                <button id="btn-config-projects" class="btn-outline">⚙️ Mis Proyectos</button>
                 <div id="auth-status" class="status-badge">⏳ Esperando conexión...</div>
             </div>
         </div>
@@ -805,6 +806,28 @@
             <div class="ia-loading" id="ia-loading">
                 <div class="spinner"></div>
                 <p>🧠 Gemini está analizando tu semana...</p>
+            </div>
+        </div>
+    </div>
+    <!-- Modal Proyectos de Investigación (Cerebro del Ciclo) -->
+    <div class="ia-overlay" id="projects-overlay">
+        <div class="ia-modal" style="max-width:700px; max-height:85vh; overflow-y:auto; padding-bottom:10px;">
+            <div class="modal-header"
+                style="background: linear-gradient(135deg, #0f172a, #1e293b); margin:-28px -28px 20px -28px; border-radius: 24px 24px 0 0;">
+                <h3 style="color:#fff; margin-bottom:4px; font-size:1.15rem;">🧠 Memoria a Largo Plazo: Mis Proyectos
+                </h3>
+                <p style="color:#94a3b8; font-size:0.85rem; margin:0;">Define el "Cerebro del Ciclo" para que el Coach
+                    Estratégico hable tu mismo idioma técnico.</p>
+            </div>
+
+            <div id="projects-container">
+                <div style="text-align:center;padding:20px;color:#64748b">Cargando contexto de proyectos...</div>
+            </div>
+
+            <div class="ia-footer" style="margin-top:10px;">
+                <button class="btn-outline"
+                    onclick="document.getElementById('projects-overlay').classList.remove('active')">Cerrar
+                    Dashboard</button>
             </div>
         </div>
     </div>
@@ -1364,6 +1387,72 @@
                 console.error(e);
             }
         }
+
+        // === GESTIÓN DE PROYECTOS (MEMORIA RAG) ===
+        const btnConfigProjects = document.getElementById('btn-config-projects');
+        const projectsOverlay = document.getElementById('projects-overlay');
+        const projectsContainer = document.getElementById('projects-container');
+
+        async function loadProjects() {
+            projectsContainer.innerHTML = '<div style="text-align:center;padding:20px;color:#64748b">✨ Conectando con la Base de Conocimiento...</div>';
+            try {
+                const r = await fetch('/api/proyectos');
+                const data = await r.json();
+                if (data.status === 'success') {
+                    projectsContainer.innerHTML = '';
+                    data.data.forEach(p => {
+                        const card = document.createElement('div');
+                        card.style.cssText = 'background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px; margin-bottom:16px;';
+                        card.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                <h4 style="margin:0; font-size:1.05rem; color:#0f172a">
+                                    <span style="background:#e2e8f0; padding:3px 8px; border-radius:6px; font-size:0.75rem; color:#475569; margin-right:8px; font-family:'Courier New', monospace; font-weight:700">${p.codigo}</span>
+                                    ${p.nombre_proyecto}
+                                </h4>
+                                <button class="btn-primary" style="padding:6px 14px; font-size:0.8rem; border-radius:8px" onclick="saveProject('${p.id}')">💾 Guardar Avance</button>
+                            </div>
+                            <div style="margin-bottom:14px;">
+                                <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:6px;">📚 Definición del Proyecto / Cátedra</label>
+                                <textarea id="desc_${p.id}" class="ia-textarea" style="min-height:50px; padding:10px; font-size:0.85rem;" placeholder="Ej: Proyecto sobre YOLO y LSTM. AD2 significa preparación del dataset...">${p.descripcion_general || ''}</textarea>
+                            </div>
+                            <div>
+                                <label style="display:block; font-size:0.8rem; font-weight:700; color:#3b82f6; margin-bottom:6px;">🎯 Alimentar Avances Recientes (La Memoria del AI)</label>
+                                <textarea id="avan_${p.id}" class="ia-textarea" style="min-height:70px; padding:10px; font-size:0.85rem; border-color:#93c5fd; background:#eff6ff" placeholder="Ej: Hoy logré que YOLO detectara buses bajo lluvia...">${p.avances_recientes || ''}</textarea>
+                            </div>
+                        `;
+                        projectsContainer.appendChild(card);
+                    });
+                }
+            } catch (e) {
+                console.error(e);
+                projectsContainer.innerHTML = '<div style="color:#ef4444;text-align:center;">❌ Error cargando la memoria de proyectos.</div>';
+            }
+        }
+
+        window.saveProject = async function (id) {
+            const desc = document.getElementById(`desc_${id}`).value;
+            const avan = document.getElementById(`avan_${id}`).value;
+            try {
+                const r = await fetch('/api/proyectos/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ descripcion_general: desc, avances_recientes: avan })
+                });
+                if (r.ok) {
+                    showToast('✅ Contexto inyectado en la Memoria a Largo Plazo');
+                } else {
+                    showToast('❌ Error al guardar datos', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('❌ Error de conexión', 'error');
+            }
+        };
+
+        btnConfigProjects.onclick = () => {
+            projectsOverlay.classList.add('active');
+            loadProjects();
+        };
 
         document.getElementById('btn-briefing').onclick = loadDailyBriefing;
 

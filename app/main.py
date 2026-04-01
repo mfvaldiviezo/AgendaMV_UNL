@@ -248,7 +248,7 @@ def actualizar_memoria_proyectos(tareas_ia: list):
     """
     if not tareas_ia: return
     try:
-        proyectos = supabase.table("proyectos_investigacion").select("id, nombre").execute()
+        proyectos = supabase.table("proyectos_investigacion").select("id, codigo, nombre_proyecto").execute()
         if not proyectos.data: return
         
         nuevos_avances = {p["id"]: [] for p in proyectos.data}
@@ -256,24 +256,26 @@ def actualizar_memoria_proyectos(tareas_ia: list):
             desc = t.get("descripcion", "").lower()
             h_inicio = t.get("hora_inicio", "")
             for p in proyectos.data:
-                nombre = p["nombre"].lower()
-                if "tesis" in nombre or "phd" in nombre:
-                    if any(k in desc for k in ["yolo", "lstm", "isolation", "tráfico"]):
-                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
-                elif "sabia" in nombre or "asistia" in nombre:
-                    if any(k in desc for k in ["sabia", "asistia", "chat", "consultivo"]):
-                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
-                elif "libro" in nombre:
-                    if "libro" in desc or "resiliencia" in desc or "memoria" in desc:
-                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
-                elif "vinculación" in nombre or "loja" in nombre:
-                    if any(k in desc for k in ["vinculación", "social", "café", "loja"]):
-                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
+                codigo = p.get("codigo", "").lower()
+                nombre = p.get("nombre_proyecto", "").lower()
+                
+                match = False
+                if "tesis" in nombre or "phd" in nombre or codigo == "tesis":
+                    if any(k in desc for k in ["yolo", "lstm", "isolation", "tráfico"]): match = True
+                elif "sabia" in nombre or "asistia" in nombre or codigo == "sabia":
+                    if any(k in desc for k in ["sabia", "asistia", "chat", "consultivo"]): match = True
+                elif "libro" in nombre or codigo == "libro":
+                    if "libro" in desc or "resiliencia" in desc or "memoria" in desc: match = True
+                elif "vinculación" in nombre or "loja" in nombre or codigo == "vinc":
+                    if any(k in desc for k in ["vinculación", "social", "café", "loja"]): match = True
+                
+                if match:
+                    nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
         
         for p_id, avances in nuevos_avances.items():
             if avances:
                 nuevo_texto = " | ".join(avances)[:300]
-                supabase.table("proyectos_investigacion").update({"estado_actual": nuevo_texto}).eq("id", p_id).execute()
+                supabase.table("proyectos_investigacion").update({"avances_recientes": nuevo_texto}).eq("id", p_id).execute()
     except Exception as e:
         print(f"Error en actualizar_memoria_proyectos: {e}")
 
@@ -455,8 +457,25 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
                 horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
         current_date += timedelta(days=1)
 
+    # Obtener Memoria Dinámica (RAG)
+    contexto_proyectos = PROJECTS_CONTEXT
+    try:
+        res = supabase.table("proyectos_investigacion").select("*").execute()
+        if res.data:
+            c = "MEMORIA DE TUS PROYECTOS Y CÓDIGOS:\n"
+            for p in res.data:
+                c += f"- [{p.get('codigo','')}] {p.get('nombre_proyecto','')}: Misión: {p.get('descripcion_general','')}. Avances Recientes: {p.get('avances_recientes','')}\n"
+            contexto_proyectos = c
+    except Exception as e:
+        print(f"RAG Planner Fallback: {e}")
+
     # Prompt estricto para OpenRouter con colores dinámicos
-    system_prompt = f"""Eres un estratega doctoral. El usuario indicará múltiples metas (ej. 1) Escritura Capítulo 3, 2) Pruebas Algoritmos). Divide estas tareas con títulos específicos y creativos. Para cada tarea generada, incluye un campo `meta_id` (1, 2, etc.) y un `color` hexadecimal único por meta. Distribuye equilibradamente las tareas en los huecos libres. Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: [{{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen', 'descripcion': 'Detalle', 'meta_id': 1, 'color': '#hex' }}]. No uses markdown."""
+    system_prompt = f"""Eres el copiloto de investigación de Marcelo. Tienes este contexto maestro: 
+{contexto_proyectos}
+
+El usuario indicará múltiples metas de investigación. Si ves códigos como AD2 o TESIS, asócialos a la lógica de tus proyectos y avanza secuencialmente basándote en los 'avances recientes'. 
+Divide las tareas con títulos creativos y técnicos. Asigna un `meta_id` y `color` hexadecimal único por meta. Distribúyelas en los huecos.
+Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: [{{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen', 'descripcion': 'Detalle', 'meta_id': 1, 'color': '#hex' }}]. No uses markdown."""
 
     try:
         response = client.chat.completions.create(
@@ -545,6 +564,33 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
 
     return {"status": "success", "tareas_generadas": guardadas, "detalle": tareas_ia}
 
+# === GESTIÓN DE PROYECTOS (RAG UI) ===
+
+@app.get("/api/proyectos")
+def listar_proyectos():
+    try:
+        res = supabase.table("proyectos_investigacion").select("*").order("codigo").execute()
+        return {"status": "success", "data": res.data}
+    except Exception as e:
+        print(f"Error listar_proyectos: {e}")
+        return {"status": "error", "data": []}
+
+class ProyectoUpdate(BaseModel):
+    descripcion_general: str
+    avances_recientes: str
+
+@app.put("/api/proyectos/{p_id}")
+def actualizar_proyecto(p_id: str, data: ProyectoUpdate):
+    try:
+        supabase.table("proyectos_investigacion").update({
+            "descripcion_general": data.descripcion_general,
+            "avances_recientes": data.avances_recientes
+        }).eq("id", p_id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error actualizar_proyecto: {e}")
+        return {"status": "error", "detail": str(e)}
+
 # === RESUMEN DIARIO (Daily Briefing) ===
 
 @app.get("/api/resumen-diario")
@@ -563,13 +609,16 @@ def resumen_diario(request: Request):
         auth_header = request.headers.get("Authorization", "")
 
         def obtener_contexto_proyectos():
-            # Misión 1: RAG Simplificado. Leemos Supabase si existe la tabla, si falla (ej. no la ha creado), usamos el estático.
             try:
-                res = supabase.table("proyectos_investigacion").select("nombre, objetivo, estado_actual, metas_pendientes").execute()
+                res = supabase.table("proyectos_investigacion").select("*").execute()
                 if res.data:
-                    contexto = "MEMORIA DE PROYECTOS (RAG):\n"
+                    contexto = "MEMORIA DE PROYECTOS Y CÁTEDRAS (RAG):\n"
                     for p in res.data:
-                        contexto += f"- {p['nombre'].upper()} (Objetivo: {p.get('objetivo','')}). Estado Actual: {p.get('estado_actual','')}. Metas: {p.get('metas_pendientes','')}\n"
+                        cod = p.get('codigo', '')
+                        nom = p.get('nombre_proyecto', '')
+                        desc = p.get('descripcion_general', '')
+                        avances = p.get('avances_recientes', '')
+                        contexto += f"[{cod}] {nom} -> Misión: {desc}. \nÚltimos Avances: {avances}\n"
                     return contexto
             except Exception as e:
                 print(f"RAG Fallback (Tabla proyectos_investigacion no encontrada): {e}")
