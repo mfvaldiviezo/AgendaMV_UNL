@@ -403,7 +403,7 @@ REGLAS ESTRICTAS:
 7. NO incluyas backticks, markdown, ni texto adicional. SOLO el JSON."""
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(system_prompt)
         raw_text = response.text.strip()
         # Limpiar backticks de markdown
