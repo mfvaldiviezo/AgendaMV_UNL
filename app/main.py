@@ -3,7 +3,7 @@ import re
 import json
 import base64
 import requests
-import google.generativeai as genai
+from openai import OpenAI
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,10 +23,14 @@ supabase: Client = create_client(url, key)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 
-# Configurar Gemini
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Configurar OpenRouter
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+client = None
+if OPENROUTER_API_KEY:
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
 
 GCAL_BASE = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 
@@ -366,8 +370,8 @@ class PlanIA(BaseModel):
 
 @app.post("/api/planificar-semana-ia")
 def planificar_semana_ia(plan: PlanIA, request: Request):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY no configurada")
+    if not client:
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
 
     # Calcular horas libres Lun-Vie (07:00-12:00 siempre libre, 12:00-13:00 almuerzo)
     fecha_lunes = datetime.strptime(plan.fecha_inicio_semana, "%Y-%m-%d")
@@ -403,18 +407,23 @@ REGLAS ESTRICTAS:
 7. NO incluyas backticks, markdown, ni texto adicional. SOLO el JSON."""
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(system_prompt)
-        raw_text = response.text.strip()
+        response = client.chat.completions.create(
+            model="google/gemini-1.5-flash",
+            messages=[
+                {"role": "system", "content": "Eres un asistente de productividad. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos que contengan: dia (YYYY-MM-DD), hora_inicio (HH:MM), hora_fin (HH:MM), titulo, descripcion. No uses backticks de markdown."},
+                {"role": "user", "content": f"Metas: {plan.prompt_usuario}\nHoras libres: {json.dumps(horas_libres, ensure_ascii=False)}"}
+            ]
+        )
+        raw_text = response.choices[0].message.content.strip()
         # Limpiar backticks de markdown
         if raw_text.startswith("```"):
             raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
             raw_text = re.sub(r'\s*```$', '', raw_text)
-        print(f"GEMINI RAW: {raw_text[:500]}")
+        print(f"OPENROUTER RAW: {raw_text[:500]}")
         tareas_ia = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        print(f"GEMINI JSON ERROR: {e}\nRAW: {raw_text[:500]}")
-        raise HTTPException(status_code=422, detail=f"Gemini devolvió JSON inválido: {str(e)}")
+        print(f"JSON ERROR: {e}\nRAW: {raw_text[:500]}")
+        raise HTTPException(status_code=422, detail=f"LLM devolvió JSON inválido: {str(e)}")
     except Exception as e:
         print(f"GEMINI ERROR: {e}")
         raise HTTPException(status_code=500, detail=f"Error de Gemini: {str(e)}")
