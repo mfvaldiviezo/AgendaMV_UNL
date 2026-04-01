@@ -1296,7 +1296,7 @@
         // ==========================================
         // COMMAND CENTER (RESUMEN SEMANAL PERSISTENTE)
         // ==========================================
-        function getWeekIso(d) {
+        function obtenerSemanaISO(d) {
             const date = new Date(d.getTime());
             date.setHours(0, 0, 0, 0);
             date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
@@ -1311,7 +1311,7 @@
             if (!calendar) return; // Si no hay calendario listo
 
             const st = calendar.view.activeStart;
-            const semanaIso = getWeekIso(st);
+            const semanaIso = obtenerSemanaISO(st);
             const en = new Date(calendar.view.activeEnd.getTime() - 86400000);
 
             if (forceGenerate) {
@@ -1325,6 +1325,7 @@
                 let data = null;
 
                 if (!forceGenerate) {
+                    console.log("Cargando semana:", semanaIso);
                     r = await fetch('/api/resumen-semanal/' + semanaIso);
                     data = await r.json();
                 }
@@ -1343,6 +1344,7 @@
                     const headers = { 'Content-Type': 'application/json' };
                     if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
 
+                    console.log("Guardando semana:", semanaIso);
                     r = await fetch('/api/resumen-semanal', {
                         method: 'POST',
                         headers,
@@ -1356,6 +1358,10 @@
 
                     btn.innerHTML = origBtn;
                     btn.disabled = false;
+
+                    if (data.status === 'success') {
+                        showToast('✅ Resumen guardado en la nube');
+                    }
                 }
 
                 if (data.status === 'success' || data.contenido_json) {
