@@ -118,7 +118,8 @@ def find_first_weekday(start_date: datetime, target_weekday: int) -> datetime:
 @app.get("/api/tareas/{fecha}")
 def obtener_tareas(fecha: str):
     res = supabase.table("tareas").select("*").eq("fecha", fecha).execute()
-    return {"data": res.data}
+    exc = supabase.table("excepciones").select("bloque_id").eq("fecha", fecha).execute()
+    return {"data": res.data, "excepciones": [r["bloque_id"] for r in exc.data]}
 
 # 2. Guardar o actualizar tarea en Supabase
 @app.post("/api/tareas")
@@ -140,15 +141,15 @@ def borrar_tarea(fecha: str, bloque_id: str, request: Request):
 
     deleted_count = 0
 
-    if bloque_id.startswith("work_"):
-        # LÓGICO: clase del distributivo → guardar excepción (no borrar, es estática)
+    if bloque_id.startswith("work_") or bloque_id.startswith("research_"):
+        # LÓGICO: bloque estático (distributivo o investigación) → guardar excepción
         existe = supabase.table("excepciones").select("id").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
         if not existe.data:
             supabase.table("excepciones").insert([{"fecha": fecha, "bloque_id": bloque_id}]).execute()
         # También borrar cualquier tarea asociada para ese bloque
         supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
-        # Intentar borrar de Google Calendar
-        if gcal_headers:
+        # Intentar borrar de Google Calendar (solo work_)
+        if gcal_headers and bloque_id.startswith("work_"):
             try:
                 parts = bloque_id.split("_")
                 if len(parts) == 3:

@@ -687,8 +687,12 @@
                     const isWeekend = (jsDay === 0 || jsDay === 6);
                     let tareas = [];
                     let excepciones = [];
-                    try { const r = await fetch('/api/tareas/' + ds); const j = await r.json(); tareas = j.data || [] } catch (e) { }
-                    try { const r = await fetch('/api/excepciones/' + ds); const j = await r.json(); excepciones = j.data || [] } catch (e) { }
+                    try {
+                        const r = await fetch('/api/tareas/' + ds);
+                        const j = await r.json();
+                        tareas = j.data || [];
+                        excepciones = j.excepciones || [];
+                    } catch (e) { }
 
                     // 1) Distributivo docente (Mon-Fri, SOLO dentro del semestre)
                     if (!isWeekend && SCHEDULE[jsDay] && isInSemester(ds)) {
@@ -713,6 +717,8 @@
 
                     // 2) Bloques de investigación
                     RESEARCH_BLOCKS.forEach(b => {
+                        // Saltar si hay una excepción registrada para este bloque
+                        if (excepciones.includes(b.id)) return;
                         const saved = tareas.find(t => t.bloque_id === b.id);
                         if (isWeekend && !saved) return;
                         const desc = saved ? saved.descripcion : b.default;
