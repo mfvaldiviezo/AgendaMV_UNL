@@ -242,6 +242,41 @@ def obtener_excepciones(fecha: str):
     res = supabase.table("excepciones").select("bloque_id").eq("fecha", fecha).execute()
     return {"data": [r["bloque_id"] for r in res.data]}
 
+def actualizar_memoria_proyectos(tareas_ia: list):
+    """
+    Actualiza el campo 'estado_actual' de la tabla proyectos_investigacion basándose en las nuevas tareas.
+    """
+    if not tareas_ia: return
+    try:
+        proyectos = supabase.table("proyectos_investigacion").select("id, nombre").execute()
+        if not proyectos.data: return
+        
+        nuevos_avances = {p["id"]: [] for p in proyectos.data}
+        for t in tareas_ia:
+            desc = t.get("descripcion", "").lower()
+            h_inicio = t.get("hora_inicio", "")
+            for p in proyectos.data:
+                nombre = p["nombre"].lower()
+                if "tesis" in nombre or "phd" in nombre:
+                    if any(k in desc for k in ["yolo", "lstm", "isolation", "tráfico"]):
+                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
+                elif "sabia" in nombre or "asistia" in nombre:
+                    if any(k in desc for k in ["sabia", "asistia", "chat", "consultivo"]):
+                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
+                elif "libro" in nombre:
+                    if "libro" in desc or "resiliencia" in desc or "memoria" in desc:
+                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
+                elif "vinculación" in nombre or "loja" in nombre:
+                    if any(k in desc for k in ["vinculación", "social", "café", "loja"]):
+                        nuevos_avances[p["id"]].append(f"Planificado ({h_inicio}): {t['titulo']}")
+        
+        for p_id, avances in nuevos_avances.items():
+            if avances:
+                nuevo_texto = " | ".join(avances)[:300]
+                supabase.table("proyectos_investigacion").update({"estado_actual": nuevo_texto}).eq("id", p_id).execute()
+    except Exception as e:
+        print(f"Error en actualizar_memoria_proyectos: {e}")
+
 @app.post("/api/sincronizar-semestre")
 def sincronizar_semestre(req: SyncCiclo):
     headers = {
@@ -504,6 +539,10 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
             except Exception as e:
                 print(f"GCAL IA ERROR: {e}")
 
+    # Misión 3: Alimentación Constante (Memoria)
+    # Background running of the DB sync could be used, but we do it inline for simplicity
+    actualizar_memoria_proyectos(tareas_ia)
+
     return {"status": "success", "tareas_generadas": guardadas, "detalle": tareas_ia}
 
 # === RESUMEN DIARIO (Daily Briefing) ===
@@ -524,6 +563,16 @@ def resumen_diario(request: Request):
         auth_header = request.headers.get("Authorization", "")
 
         def obtener_contexto_proyectos():
+            # Misión 1: RAG Simplificado. Leemos Supabase si existe la tabla, si falla (ej. no la ha creado), usamos el estático.
+            try:
+                res = supabase.table("proyectos_investigacion").select("nombre, objetivo, estado_actual, metas_pendientes").execute()
+                if res.data:
+                    contexto = "MEMORIA DE PROYECTOS (RAG):\n"
+                    for p in res.data:
+                        contexto += f"- {p['nombre'].upper()} (Objetivo: {p.get('objetivo','')}). Estado Actual: {p.get('estado_actual','')}. Metas: {p.get('metas_pendientes','')}\n"
+                    return contexto
+            except Exception as e:
+                print(f"RAG Fallback (Tabla proyectos_investigacion no encontrada): {e}")
             return PROJECTS_CONTEXT
 
         def get_gcal_externos(fecha_str: str):
@@ -585,16 +634,20 @@ def resumen_diario(request: Request):
             f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
         )
         system_prompt = (
-            f"Eres el estratega y colega investigador PhD de Marcelo. Conoces profundamente su contexto:\n"
+            f"Eres el Arquitecto Técnico de la agenda de Marcelo.\n\n"
             f"{obtener_contexto_proyectos()}\n\n"
-            f"Tu objetivo es SINTETIZAR. No listes todos los eventos mecánicamente.\n"
-            f"1. Prioridades de HOY (Máx 3): Identifica los hitos críticos. Si hay una reunión externa, explícale por qué es vital cumplir ese compromiso. Si tiene bloques enteros en la Tesis (YOLO/LSTM), exígele avances técnicos específicos acordes a su nivel.\n"
-            f"2. Omisión de Ruido: Ignora tareas genéricas o de 'continuous work' a menos que bloqueen el progreso.\n"
-            f"3. Estrategia Mañana ({dia_nombre_manana}): Menciona UNICAMENTE lo que debe dejar listo HOY para que la jornada de mañana sea invencible.\n\n"
-            f"Formato Mínimo Viable (SIN listas aburridas. Usa párrafos potentes y directos en markdown):\n"
-            f"## 🎯 Foco Estratégico de Hoy\n(1-2 párrafos narrativos)\n\n"
-            f"## ⚡ Estrategia para Mañana\n(1 párrafo breve)\n\n"
-            f"Tono: Colega PhD, altamente técnico, directo y motivador. Máximo 160 palabras."
+            f"Regla de Oro: Cero prosa innecesaria. Usa el contexto de la tabla de proyectos para dar un sentido visceral a las horas.\n"
+            f"Tu mandato es producir un reporte ULTRA-PUNTUAL estrictamente con este formato exacto (Usa Markdown y los emojis indicados):\n\n"
+            f"## HOY {hoy.strftime('%d/%m')}:\n\n"
+            f"🔴 CRÍTICO: [Hora/Rango] [Nombre de la reunión externa o clase vital con su impacto inmediato].\n\n"
+            f"🔬 TESIS: [Hora/Rango] [Avance técnico estricto, Ej. Refinar Isolation Forest - Capítulo 3].\n\n"
+            f"🎓 SABIA-UNL: [Hora/Rango] [Desarrollo o tarea específica según el horario].\n\n"
+            f"## MAÑANA:\n\n"
+            f"⚠️ PREPARAR: [Acción concreta hoy que destraba su mañana en el horario del {dia_nombre_manana}].\n\n"
+            f"Instrucciones restrictivas:\n"
+            f"- NO uses viñetas genéricas (-).\n"
+            f"- SI NO HAY tareas para un área hoy, omite esa etiqueta en vez de poner 'No hay tareas'.\n"
+            f"- Tono: Hacker / Arquitecto. Directo a la vena. Máximo 130 palabras."
         )
 
         try:
