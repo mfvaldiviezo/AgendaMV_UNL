@@ -1316,54 +1316,40 @@
 
         // === RESUMEN DIARIO (DAILY BRIEFING) ===
         async function loadDailyBriefing() {
-            const body = document.getElementById('briefing-body');
-            const overlay = document.getElementById('briefing-overlay');
-            const subtitle = document.getElementById('briefing-date-subtitle');
+            const body = document.getElementById('cc-events');
 
-            overlay.classList.add('active');
-            body.innerHTML = '<div style="text-align:center;padding:30px 0"><div class="briefing-spinner"></div><p style="margin-top:12px;color:#7c3aed;font-weight:600">🧠 Tu coach está analizando la agenda...</p></div>';
-            document.getElementById('briefing-refresh').disabled = true;
+            body.innerHTML = '<div style="width:100%;text-align:center;padding:20px 0"><div class="briefing-spinner"></div><p style="margin-top:12px;color:#cbd5e1;font-weight:600">🧠 Tu coach estratégico está conectando...</p></div>';
 
             try {
-                // El backend calcula la hora Ecuador correcta (UTC-5) nativamente
                 const r = await fetch('/api/resumen-diario');
                 const data = await r.json();
 
                 if (r.ok) {
-                    subtitle.innerText = `Hoy: ${data.fecha_hoy} | Mañana: ${data.fecha_manana}`;
-
-                    // Parseo simple de Markdown (H2, Bold, Italic, Bullets)
                     let html = data.resumen
-                        .replace(/^##\s*(.*?)$/gm, '<h2>$1</h2>')
-                        .replace(/\*\*(.*?)\*\*/gg, '<b>$1</b>')
-                        .replace(/\*(.*?)\*/g, '<i>$1</i>')
-                        .replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>');
+                        .replace(/^##\s*(.*?)$/gm, '<h3 style="color:#e2e8f0;margin:10px 0 5px;font-size:1rem">$1</h3>')
+                        .replace(/\*\*(.*?)\*\*/g, '<b style="color:#f8fafc">$1</b>')
+                        .replace(/\*(.*?)\*/g, '<i style="color:#94a3b8">$1</i>')
+                        .replace(/^\s*[-*]\s+(.*)$/gm, '<li style="margin-left:20px;margin-bottom:6px">$1</li>');
 
-                    // Agrupar los <li> generados en <ul>
-                    html = html.replace(/(<li>.*?<\/li>(\n|.)*?)+(?!<li>)/g, match => `<ul>${match}</ul>`);
-                    // Saltos de línea restantes
+                    // Keyword styling
+                    html = html.replace(/\b(YOLO|LSTMs?|Isolation Forest|tráfico)\b/gi, '<span style="color:#38bdf8;font-weight:600">$&</span>');
+                    html = html.replace(/\b(Libro|Tesis|Capítulo)\b/gi, '<span style="color:#818cf8;font-weight:600">$&</span>');
+                    html = html.replace(/\b(Clase|Clases|Tutoría)\b/gi, '<span style="color:#34d399;font-weight:600">$&</span>');
+
+                    html = html.replace(/(<li.*?>.*?<\/li>(\n|.)*?)+(?!<li)/g, match => `<ul style="margin-bottom:12px">${match}</ul>`);
                     html = html.replace(/\n(?![<])/g, '<br>');
 
-                    body.innerHTML = html;
+                    body.innerHTML = `<div style="width:100%;font-size:0.92rem;line-height:1.6">${html}</div>`;
                 } else {
-                    body.innerHTML = `<div style="color:#e11d48;padding:20px 0;text-align:center">❌ Error: ${data.detail || 'Desconocido'}</div>`;
+                    body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error: ${data.detail || 'Desconocido'}</div>`;
                 }
             } catch (e) {
-                body.innerHTML = `<div style="color:#e11d48;padding:20px 0;text-align:center">❌ Error de conexión al servidor</div>`;
+                body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error de conexión al servidor</div>`;
                 console.error(e);
-            } finally {
-                document.getElementById('briefing-refresh').disabled = false;
             }
         }
 
         document.getElementById('btn-briefing').onclick = loadDailyBriefing;
-        document.getElementById('briefing-refresh').onclick = loadDailyBriefing;
-
-        const closeBriefing = () => document.getElementById('briefing-overlay').classList.remove('active');
-        document.getElementById('briefing-close').onclick = closeBriefing;
-        document.getElementById('briefing-overlay').onclick = (e) => {
-            if (e.target === document.getElementById('briefing-overlay')) closeBriefing();
-        };
 
         iniciarApp();
     </script>

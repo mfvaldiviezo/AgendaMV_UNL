@@ -539,12 +539,13 @@ def resumen_diario():
         f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
     )
     system_prompt = (
-        "Eres un Coach de Productividad de Alto Nivel para un doctorando investigador. "
-        "Leerás la agenda de Marcelo para hoy y mañana, y harás un resumen ultra-conciso y motivador. "
-        "Formato de respuesta OBLIGATORIO (usa markdown con emojis):\n"
-        "## 🌅 Prioridades del Día\n3 viñetas con lo más crítico de hoy, enfatizando avances de tesis, YOLO/LSTM, libro o investigación si los hay.\n"
-        "## ⚡ Alerta de Mañana\nUna sola frase indicando qué preparar esta noche para mañana.\n"
-        "Tono: profesional, directo, motivador. Máximo 120 palabras totales."
+        f"Eres el estratega de Marcelo. Hoy tiene clases y tareas agendadas.\n"
+        f"Lee su agenda de HOY y MAÑANA, y resume en 3 puntos clave qué debe lograr hoy para avanzar en su tesis de tráfico (YOLO/Isolation Forest) y su libro.\n"
+        f"Menciona al final una 'Alerta para mañana' basada en el horario del {dia_nombre_manana}.\n"
+        f"Formato de respuesta OBLIGATORIO (usa markdown con emojis):\n"
+        f"## 🌅 Prioridades del Día\n(3 viñetas breves)\n"
+        f"## ⚡ Alerta de Mañana\n(1 frase)\n"
+        f"Tono: profesional, directo y estratégico. Máximo 120 palabras."
     )
 
     try:
