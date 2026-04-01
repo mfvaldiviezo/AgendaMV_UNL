@@ -1305,7 +1305,7 @@
             return `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
         }
 
-        async function loadWeeklySummary(forceGenerate = false) {
+        async function cargarResumenGuardado(forceGenerate = false) {
             const body = document.getElementById('cc-events');
 
             if (!calendar) return; // Si no hay calendario listo
@@ -1317,7 +1317,7 @@
             if (forceGenerate) {
                 body.innerHTML = '<div style="width:100%;text-align:center;padding:20px 0"><div class="briefing-spinner"></div><p style="margin-top:12px;color:#cbd5e1;font-weight:600">🧠 Evaluando toda la semana con IA...</p></div>';
             } else {
-                body.innerHTML = `<div class="cc-empty">Consultando memoria de semana ${semanaIso}...</div>`;
+                body.innerHTML = `<div class="cc-empty">Consultando base de datos (Semana ${semanaIso})...</div>`;
             }
 
             try {
