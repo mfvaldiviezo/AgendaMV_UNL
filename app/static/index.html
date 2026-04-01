@@ -1358,7 +1358,7 @@
                     btn.disabled = false;
                 }
 
-                if (data.status === 'success') {
+                if (data.status === 'success' || data.contenido_json) {
                     let html = data.contenido_json
                         .replace(/^##\s*(.*?)/gm, '<h3 style="color:#f8fafc;margin:24px 0 12px;font-size:1.05rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:5px;text-transform:uppercase;letter-spacing:1px">$1</h3>')
                         .replace(/^#\s*(.*?)/gm, '<h2 style="color:#fff;margin:15px 0 8px;font-size:1.15rem">$1</h2>')

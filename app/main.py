@@ -613,9 +613,12 @@ class ReqResumenSemanal(BaseModel):
 def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
     try:
         # Prevención de re-generación (Seguro AI)
-        check = supabase.table("resumenes_semanales").select("contenido_json").eq("semana_iso", req.semana_iso).execute()
-        if check.data:
-            return {"status": "success", "contenido_json": check.data[0]["contenido_json"]}
+        try:
+            check = supabase.table("resumenes_semanales").select("contenido_json").eq("semana_iso", str(req.semana_iso)).execute()
+            if check.data:
+                return {"status": "success", "contenido_json": check.data[0]["contenido_json"]}
+        except Exception as e:
+            print(f"Error check Supabase: {e}")
 
         if not client:
             raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
@@ -729,12 +732,12 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
         # Guardar en persistencia segura
         try:
             supabase.table("resumenes_semanales").upsert({
-                "semana_iso": req.semana_iso,
-                "contenido_json": resumen,
+                "semana_iso": str(req.semana_iso),
+                "contenido_json": str(resumen),
                 "fecha_creacion": datetime.utcnow().isoformat()
             }, on_conflict="semana_iso").execute()
         except Exception as e:
-            print(f"Error guardando resumen_semanal (Ignorado para retornar respuesta): {e}")
+            print(f"Error en Supabase: {e}")
 
         return {
             "status": "success",
