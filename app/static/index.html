@@ -938,7 +938,10 @@
 
                     // 2) Eventos custom o generados por IA (de Supabase)
                     tareas.filter(t => t.bloque_id.startsWith('custom_') || t.bloque_id.startsWith('ia_')).forEach(t => {
-                        const c = getColor('', 'doctorado');
+                        let bg = '#4f46e5', border = '#4338ca'; // Defecto: doctorado
+                        if (t.bloque_id.startsWith('ia_')) {
+                            bg = '#8b5cf6'; border = '#7c3aed'; // Violeta para IA
+                        }
                         // Extraer horas del texto: "Cat [HH:MM — HH:MM]\nDetalle" (para custom) o usar 🤖 para IA
                         const timeMatch = t.descripcion.match(/\[(\d{2}:\d{2})\s*—\s*(\d{2}:\d{2})\]/);
                         const st = timeMatch ? timeMatch[1] : '08:00';
@@ -950,9 +953,9 @@
                         const nlIdx = t.descripcion.indexOf('\n');
                         const detail = nlIdx > -1 ? t.descripcion.substring(nlIdx + 1) : t.descripcion;
                         all.push({
-                            title: (cat || '📝') + ': ' + detail,
+                            title: (cat || '🤖') + ': ' + detail,
                             start: ds + 'T' + st + ':00', end: ds + 'T' + en + ':00',
-                            backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
+                            backgroundColor: bg, borderColor: border, textColor: '#fff',
                             extendedProps: {
                                 source: 'custom', bloqueId: t.bloque_id, fecha: ds,
                                 descripcion: t.descripcion, blockName: cat || 'Custom', tareaGuardada: detail
@@ -1064,6 +1067,7 @@
                 height: 700, nowIndicator: true, allDaySlot: true, allDayText: 'Día',
                 slotDuration: '00:30:00', slotLabelInterval: '01:00:00',
                 expandRows: true, dayMaxEvents: true,
+                slotEventOverlap: false, eventOrder: 'start',
                 selectable: true, selectMirror: true,
                 events: loadAllEvents,
                 eventsSet: function (events) { updateCC(events) },

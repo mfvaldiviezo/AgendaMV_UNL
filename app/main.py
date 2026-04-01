@@ -361,7 +361,20 @@ def obtener_configuracion():
         "GOOGLE_CLIENT_ID": GOOGLE_CLIENT_ID
     }
 
-# === AGENTE IA: Planificación Semanal con Gemini ===
+def verificar_colision(nuevo_evento: dict, horario_docente: dict) -> bool:
+    """Verifica si un evento de la IA choca con SCHEDULE_DATA (Prioridad Docente)."""
+    try:
+        dia_obj = datetime.strptime(nuevo_evento["dia"], "%Y-%m-%d")
+        js_day = dia_obj.weekday()
+        if js_day in horario_docente:
+            for hora_clase in horario_docente[js_day].keys():
+                if nuevo_evento["hora_inicio"] == hora_clase:
+                    return True
+    except:
+        pass
+    return False
+
+# === AGENTE IA: Planificación Semanal ===
 
 class PlanIA(BaseModel):
     prompt_usuario: str
@@ -417,6 +430,15 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
         print(f"GEMINI ERROR: {e}")
         raise HTTPException(status_code=500, detail=f"Error de Gemini: {str(e)}")
 
+    # Limpiar pizarra: Eliminar eventos de investigación previos de la IA en esta semana
+    if horas_libres:
+        fecha_inicio = horas_libres[0]["dia"]
+        fecha_fin = horas_libres[-1]["dia"]
+        try:
+            supabase.table("tareas").delete().gte("fecha", fecha_inicio).lte("fecha", fecha_fin).like("bloque_id", "ia_%").execute()
+        except Exception as e:
+            print(f"Error al limpiar pizarra previa: {e}")
+
     # Guardar en Supabase + Google Calendar
     auth_header = request.headers.get("Authorization", "")
     gcal_headers = None
@@ -425,13 +447,18 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
 
     guardadas = 0
     for t in tareas_ia:
+        # Prioridad Docente: Verificar colisión
+        if verificar_colision(t, SCHEDULE_DATA):
+            print(f"Colisión evitada (Prioridad Docente): {t}")
+            continue
+
         bloque_id = f"ia_{t['dia'].replace('-','')}{t['hora_inicio'].replace(':','')}"
         db_data = {
             "fecha": t["dia"],
             "bloque_id": bloque_id,
             "descripcion": f"🤖 {t['titulo']} [{t['hora_inicio']} — {t['hora_fin']}]\n{t['descripcion']}"
         }
-        # Upsert en Supabase
+        # Upsert en Supabase (ahora casi siempre será Insert por la limpieza, pero mantenemos Upsert por seguridad)
         existe = supabase.table("tareas").select("id").eq("fecha", t["dia"]).eq("bloque_id", bloque_id).execute()
         if existe.data:
             supabase.table("tareas").update({"descripcion": db_data["descripcion"]}).eq("id", existe.data[0]["id"]).execute()
