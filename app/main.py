@@ -133,6 +133,12 @@ def guardar_tarea(tarea: Tarea):
 # 2b. Borrar tarea de Supabase (y opcionalmente de Google Calendar)
 @app.delete("/api/tareas/{fecha}/{bloque_id}")
 def borrar_tarea(fecha: str, bloque_id: str, request: Request):
+    # Primero, buscar el registro para obtener posible google_event_id
+    registro = supabase.table("tareas").select("*").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+    google_event_id = None
+    if registro.data and len(registro.data) > 0:
+        google_event_id = registro.data[0].get("google_event_id")
+
     # Borrar de Supabase
     resultado = supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
 
@@ -140,17 +146,16 @@ def borrar_tarea(fecha: str, bloque_id: str, request: Request):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         headers = {"Authorization": auth_header, "Content-Type": "application/json"}
-        # Intentar con IDs de trabajo (work_X_HHMM) para buscar evento recurrente
-        # Los eventos del distributivo usan IDs deterministas generados por generate_event_id
-        # Los bloques de investigación no tienen evento en Google Calendar
         try:
-            # Para bloques de trabajo, intentar derivar el event_id de Google Calendar
-            if bloque_id.startswith("work_"):
+            # 1. Si tiene google_event_id guardado, borrar directamente
+            if google_event_id:
+                requests.delete(f"{GCAL_BASE}/{google_event_id}", headers=headers)
+            # 2. Para bloques de trabajo, derivar el event_id determinista
+            elif bloque_id.startswith("work_"):
                 parts = bloque_id.split("_")  # work_1_1300
                 if len(parts) == 3:
-                    day_idx = int(parts[1]) - 1  # JS day (1=Mon) → Python weekday (0=Mon)
+                    day_idx = int(parts[1]) - 1
                     hora = parts[2][:2] + ":" + parts[2][2:]
-                    # Intentar borrar con todos los semestres comunes
                     for sem in ["2026a", "2026b"]:
                         event_id = generate_event_id(day_idx, hora, sem)
                         requests.delete(f"{GCAL_BASE}/{event_id}", headers=headers)
