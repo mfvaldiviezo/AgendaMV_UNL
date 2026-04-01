@@ -1341,10 +1341,10 @@
 
                     body.innerHTML = `<div style="width:100%;font-size:0.92rem;line-height:1.6">${html}</div>`;
                 } else {
-                    body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error: ${data.detail || 'Desconocido'}</div>`;
+                    body.innerHTML = `<div class="cc-empty" style="color:#ef4444">⚠️ No pudimos conectar con tu Coach Estratégico. Intenta de nuevo. (Detalle: ${data.detail || 'Desconocido'})</div>`;
                 }
             } catch (e) {
-                body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error de conexión al servidor</div>`;
+                body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error de conexión al servidor al cargar el Resumen.</div>`;
                 console.error(e);
             }
         }

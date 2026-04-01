@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import pytz
 
 load_dotenv()
 
@@ -501,72 +502,84 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
 
 @app.get("/api/resumen-diario")
 def resumen_diario():
-    if not client:
-        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
-
-    # Fecha actual en hora Ecuador (UTC-5) — 100% dinámica
-    ecuador_tz = timezone(timedelta(hours=-5))
-    hoy = datetime.now(ecuador_tz).date()
-    manana = hoy + timedelta(days=1)
-    fecha_hoy_str = hoy.strftime("%Y-%m-%d")
-    fecha_manana_str = manana.strftime("%Y-%m-%d")
-
-    def get_agenda_dia(fecha_str: str):
-        """Obtiene eventos de DB + clases del distributivo para un día."""
-        eventos = []
-        # 1. Clases del distributivo
-        dia_semana = datetime.strptime(fecha_str, "%Y-%m-%d").weekday()
-        clases = SCHEDULE_DATA.get(dia_semana, {})
-        for hora, actividad in clases.items():
-            eventos.append(f"  - [{hora}] {actividad}")
-        # 2. Tareas de Supabase
-        try:
-            tareas = supabase.table("tareas").select("bloque_id, descripcion").eq("fecha", fecha_str).execute()
-            for tarea in (tareas.data or []):
-                desc = tarea.get("descripcion", "")[:120]
-                eventos.append(f"  - [Tarea] {desc}")
-        except Exception as e:
-            print(f"Error consultando tareas para {fecha_str}: {e}")
-        return eventos or ["  - (Día libre / sin actividades registradas)"]
-
-    agenda_hoy = "\n".join(get_agenda_dia(fecha_hoy_str))
-    agenda_manana = "\n".join(get_agenda_dia(fecha_manana_str))
-    dia_nombre_hoy = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][hoy.weekday()]
-    dia_nombre_manana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][manana.weekday()]
-
-    user_prompt = (
-        f"Agenda de HOY ({dia_nombre_hoy} {fecha_hoy_str}):\n{agenda_hoy}\n\n"
-        f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
-    )
-    system_prompt = (
-        f"Eres el estratega de Marcelo. Hoy tiene clases y tareas agendadas.\n"
-        f"Lee su agenda de HOY y MAÑANA, y resume en 3 puntos clave qué debe lograr hoy para avanzar en su tesis de tráfico (YOLO/Isolation Forest) y su libro.\n"
-        f"Menciona al final una 'Alerta para mañana' basada en el horario del {dia_nombre_manana}.\n"
-        f"Formato de respuesta OBLIGATORIO (usa markdown con emojis):\n"
-        f"## 🌅 Prioridades del Día\n(3 viñetas breves)\n"
-        f"## ⚡ Alerta de Mañana\n(1 frase)\n"
-        f"Tono: profesional, directo y estratégico. Máximo 120 palabras."
-    )
-
     try:
-        response = client.chat.completions.create(
-            model="openrouter/auto",
-            max_tokens=400,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        resumen = response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"RESUMEN ERROR: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generando resumen: {str(e)}")
+        if not client:
+            raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
 
-    return {
-        "fecha_hoy": fecha_hoy_str,
-        "fecha_manana": fecha_manana_str,
-        "resumen": resumen
-    }
+        # Fecha actual en hora Ecuador (UTC-5) — 100% dinámica
+        ecuador_tz = pytz.timezone('America/Guayaquil')
+        hoy = datetime.now(ecuador_tz).date()
+        manana = hoy + timedelta(days=1)
+        fecha_hoy_str = hoy.strftime("%Y-%m-%d")
+        fecha_manana_str = manana.strftime("%Y-%m-%d")
+
+        def get_agenda_dia(fecha_str: str):
+            """Obtiene eventos de DB + clases del distributivo para un día."""
+            eventos = []
+            # 1. Clases del distributivo
+            dia_semana = datetime.strptime(fecha_str, "%Y-%m-%d").weekday()
+            clases = SCHEDULE_DATA.get(dia_semana, {})
+            for hora, actividad in clases.items():
+                eventos.append(f"  - [{hora}] {actividad}")
+            # 2. Tareas de Supabase
+            try:
+                tareas = supabase.table("tareas").select("bloque_id, descripcion").eq("fecha", fecha_str).execute()
+                print(f"DEBUG Supabase Tareas ({fecha_str}): {tareas.data}")
+                for tarea in (tareas.data or []):
+                    desc = tarea.get("descripcion", "")[:120]
+                    eventos.append(f"  - [Tarea] {desc}")
+            except Exception as e:
+                print(f"Error consultando tareas para {fecha_str}: {e}")
+            
+            if not eventos:
+                return ["  - (Día libre / sin actividades registradas)"]
+            return eventos
+
+        agenda_hoy = "\n".join(get_agenda_dia(fecha_hoy_str))
+        agenda_manana = "\n".join(get_agenda_dia(fecha_manana_str))
+        dia_nombre_hoy = DAY_NAMES[hoy.weekday()]
+        dia_nombre_manana = DAY_NAMES[manana.weekday()]
+
+        user_prompt = (
+            f"Agenda de HOY ({dia_nombre_hoy} {fecha_hoy_str}):\n{agenda_hoy}\n\n"
+            f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
+        )
+        system_prompt = (
+            f"Eres el estratega de Marcelo. Hoy tiene clases y tareas agendadas.\n"
+            f"Lee su agenda de HOY y MAÑANA, y resume en 3 puntos clave qué debe lograr hoy para avanzar en su tesis de tráfico (YOLO/Isolation Forest) y su libro.\n"
+            f"Menciona al final una 'Alerta para mañana' basada en el horario del {dia_nombre_manana}.\n"
+            f"Si no hay tareas, recomiéndale un descanso estratégico.\n"
+            f"Formato OBLIGATORIO:\n"
+            f"## 🌅 Prioridades del Día\n(3 viñetas)\n"
+            f"## ⚡ Alerta de Mañana\n(1 frase)\n"
+            f"Tono: profesional, estratégico. Máximo 120 palabras."
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model="openrouter/auto",
+                max_tokens=400,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            resumen = response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"LLM RESUMEN ERROR: {e}")
+            raise HTTPException(status_code=502, detail=f"Fallo en la comunicación con la IA")
+
+        return {
+            "fecha_hoy": fecha_hoy_str,
+            "fecha_manana": fecha_manana_str,
+            "resumen": resumen
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"CRITICAL ERROR /api/resumen-diario: {e}")
+        raise HTTPException(status_code=500, detail="Error interno procesando el resumen diario.")
 
 
 # Servir el Frontend estático
