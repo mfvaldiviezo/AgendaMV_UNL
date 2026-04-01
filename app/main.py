@@ -602,7 +602,7 @@ def get_resumen_semanal(semana_iso: str):
         return {"status": "not_found"}
     except Exception as e:
         print(f"Error GET resumen_semana: {e}")
-        raise HTTPException(status_code=500, detail="Error leyendo resumenes.")
+        return {"status": "not_found", "detail": "Tabla no existe o error en DB."}
 
 class ReqResumenSemanal(BaseModel):
     semana_iso: str
@@ -692,16 +692,16 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
         system_prompt = (
             f"Eres el Arquitecto Técnico de la agenda de Marcelo.\n\n"
             f"Contexto: {obtener_contexto_proyectos()}\n\n"
-            f"PROHIBICIÓN ESTRICTA: No menciones nombres de proyectos específicos como SABIA, YOLO, etc. Usa únicamente las categorías mayores: GESTIÓN, INVESTIGACIÓN, DOCENCIA.\n\n"
-            f"PRIORIDAD CRÍTICA #1: Lo primero en el texto DEBE ser cualquier evento que venga de Google Calendar (marcado en el texto como [EXTERNO GCAL]). Si hay reuniones externas, lístalas todas al principio como prioridad máxima absoluta.\n\n"
-            f"ALINEACIÓN VISUAL: El resumen debe basarse estrictamente en los bloques del horario. Si ves un bloque [DOCENCIA/GESTIÓN] como 'AD 5', agrupalo en la categoría DOCENCIA de forma ultra resumida.\n\n"
+            f"PROHIBICIÓN ESTRICTA: No menciones nombres de proyectos específicos como SABIA, YOLO, etc. Usa únicamente las categorías mayores: CRÍTICO, INVESTIGACIÓN, DOCENCIA, GESTIÓN.\n\n"
+            f"PRIORIDAD MÁXIMA ABSOLUTA: Si hay eventos marcados con [EXTERNO GCAL] (ej. Reuniones, Proyecto Café), DEBEN ir primero en el resumen bajo la rúbrica CRÍTICO.\n\n"
+            f"ALINEACIÓN VISUAL: El resumen debe basarse estrictamente en los bloques del horario.\n\n"
             f"Estructura EXACTA (Cero prosa, usa Markdown):\n\n"
-            f"## PRIORIDAD CRÍTICA (EVENTOS EXTERNOS):\n"
+            f"## CRÍTICO (EVENTOS EXTERNOS):\n"
             f"[Día - Hora] [Título]\n\n"
             f"## INVESTIGACIÓN:\n"
-            f"[Día - Rango Hora] (Avance breve).\n\n"
+            f"[Día - Rango Hora] [Avance breve].\n\n"
             f"## DOCENCIA Y GESTIÓN:\n"
-            f"Resumen corto de los bloques docentes de la semana.\n\n"
+            f"[Resumen de la docencia y gestión]\n\n"
             f"Tono: Terminal hacker, directo. Máximo 180 palabras."
         )
 
@@ -719,12 +719,15 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
             print(f"LLM RESUMEN ERROR: {e}")
             raise HTTPException(status_code=502, detail=f"Fallo en comunicación IA")
 
-        # Guardar en persistencia
-        supabase.table("resumenes_semanales").upsert({
-            "semana_iso": req.semana_iso,
-            "contenido_json": resumen,
-            "fecha_creacion": datetime.utcnow().isoformat()
-        }).execute()
+        # Guardar en persistencia segura
+        try:
+            supabase.table("resumenes_semanales").upsert({
+                "semana_iso": req.semana_iso,
+                "contenido_json": resumen,
+                "fecha_creacion": datetime.utcnow().isoformat()
+            }).execute()
+        except Exception as e:
+            print(f"Error guardando resumen_semanal (Ignorado para retornar respuesta): {e}")
 
         return {
             "status": "success",

@@ -1331,7 +1331,7 @@
 
                 if (forceGenerate || data.status === 'not_found' || !data.data) {
                     if (!forceGenerate) {
-                        body.innerHTML = `<div class="cc-empty" style="text-align:center">No hay análisis para la semana <b>${semanaIso}</b>.<br><br><button class="btn-primary" onclick="loadWeeklySummary(true)" style="font-size:0.8rem;padding:6px 12px;cursor:pointer;margin-top:10px;">🧠 Generar Evaluación Semanal</button></div>`;
+                        body.innerHTML = `<div class="cc-empty" style="text-align:center;padding:30px 10px;color:#64748b">Semana sin planificar.<br><br>Dale a <b>'Resumen del Día'</b> para generar uno.</div>`;
                         return;
                     }
 
@@ -1391,7 +1391,6 @@
                 }
             } catch (e) {
                 body.innerHTML = `<div class="cc-empty" style="color:#ef4444">❌ Error de conexión al servidor al cargar el Resumen.</div>`;
-                console.error(e);
             }
         }
 
