@@ -47,6 +47,8 @@ class Tarea(BaseModel):
     fecha: str
     bloque_id: str
     descripcion: str
+    hora_inicio: str = ""
+    hora_fin: str = ""
 
 class SyncCiclo(BaseModel):
     token: str
@@ -136,12 +138,13 @@ def obtener_tareas(fecha: str):
 # 2. Guardar o actualizar tarea en Supabase + Google Calendar
 @app.post("/api/tareas")
 def guardar_tarea(tarea: Tarea, request: Request):
-    # Supabase: upsert
+    # Supabase: upsert (solo campos que existen en la tabla)
+    db_data = {"fecha": tarea.fecha, "bloque_id": tarea.bloque_id, "descripcion": tarea.descripcion}
     existe = supabase.table("tareas").select("id").eq("fecha", tarea.fecha).eq("bloque_id", tarea.bloque_id).execute()
     if len(existe.data) > 0:
         supabase.table("tareas").update({"descripcion": tarea.descripcion}).eq("id", existe.data[0]["id"]).execute()
     else:
-        supabase.table("tareas").insert([tarea.dict()]).execute()
+        supabase.table("tareas").insert([db_data]).execute()
 
     # Google Calendar: sync si hay token
     gcal_synced = False
@@ -149,25 +152,10 @@ def guardar_tarea(tarea: Tarea, request: Request):
     if auth_header.startswith("Bearer "):
         gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
         gcal_id = generate_task_gcal_id(tarea.fecha, tarea.bloque_id)
-        # Parsear horario del bloque_id para el evento
-        start_hour, end_hour = "08:00", "09:00"
-        if tarea.bloque_id.startswith("work_"):
-            parts = tarea.bloque_id.split("_")
-            if len(parts) == 3:
-                h = parts[2][:2] + ":" + parts[2][2:]
-                start_hour = h
-                end_hour = str(int(parts[2][:2]) + 1).zfill(2) + ":" + parts[2][2:]
-        elif tarea.bloque_id.startswith("custom_"):
-            # Extraer horas de la descripción: "Cat [HH:MM — HH:MM]\nDetalle"
-            import re as _re
-            m = _re.search(r"\[(\d{2}:\d{2})\s*[—-]\s*(\d{2}:\d{2})\]", tarea.descripcion)
-            if m:
-                start_hour, end_hour = m.group(1), m.group(2)
-        elif tarea.bloque_id.startswith("research_"):
-            blocks = {"research_1": ("07:30", "09:00"), "research_2": ("09:00", "10:30"),
-                      "research_3": ("10:30", "11:30"), "research_4": ("22:20", "23:20")}
-            if tarea.bloque_id in blocks:
-                start_hour, end_hour = blocks[tarea.bloque_id]
+
+        # Usar horas enviadas por el frontend (fuente de verdad)
+        start_hour = tarea.hora_inicio or "08:00"
+        end_hour = tarea.hora_fin or "09:00"
 
         gcal_payload = {
             "summary": f"📘 {tarea.descripcion[:80]}",

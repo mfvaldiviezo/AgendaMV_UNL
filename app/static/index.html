@@ -624,8 +624,8 @@
         // ==========================================
         // MODAL
         // ==========================================
-        function openModalEdit(title, subtitle, currentText, fecha, bloqueId, source, activity) {
-            modalState = { mode: 'edit', fecha, bloqueId, source, activity, startStr: '', endStr: '' };
+        function openModalEdit(title, subtitle, currentText, fecha, bloqueId, source, activity, startStr, endStr) {
+            modalState = { mode: 'edit', fecha, bloqueId, source, activity, startStr: startStr || '', endStr: endStr || '' };
             document.getElementById('modal-title').textContent = '✏️ ' + title;
             document.getElementById('modal-subtitle').textContent = fecha + ' · ' + bloqueId;
             document.getElementById('modal-textarea').value = currentText || '';
@@ -690,9 +690,14 @@
             try {
                 const headers = { 'Content-Type': 'application/json' };
                 if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+                // Extraer hora_inicio y hora_fin del modalState
+                const hiRaw = modalState.startStr || '';
+                const hfRaw = modalState.endStr || '';
+                const hora_inicio = hiRaw.includes('T') ? hiRaw.split('T')[1].substring(0, 5) : '';
+                const hora_fin = hfRaw.includes('T') ? hfRaw.split('T')[1].substring(0, 5) : '';
                 const r = await fetch('/api/tareas', {
                     method: 'POST', headers,
-                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc })
+                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc, hora_inicio, hora_fin })
                 });
                 const data = await r.json();
                 closeModal();
@@ -949,7 +954,7 @@
                     const p = info.event.extendedProps;
                     if (p.source === 'external') return;
                     const label = p.source === 'doctorado' ? p.blockName : (p.source === 'custom' ? p.blockName : (p.activity || 'Actividad'));
-                    openModalEdit(label, p.fecha + ' · ' + p.bloqueId, p.descripcion || '', p.fecha, p.bloqueId, p.source, p.activity || '');
+                    openModalEdit(label, p.fecha + ' · ' + p.bloqueId, p.descripcion || '', p.fecha, p.bloqueId, p.source, p.activity || '', info.event.startStr, info.event.endStr);
                 },
 
                 // Arrastrar para seleccionar rango libre → modal de creación
