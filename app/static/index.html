@@ -696,7 +696,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <button id="btn-ia-plan" class="btn-ia">✨ Planificar Semana con IA</button>
-                <button id="btn-briefing" class="btn-briefing">🌅 Resumen del Día</button>
+                <button id="btn-briefing" class="btn-briefing">🌅 Generar Resumen</button>
                 <button id="btn-sync-semester" class="btn-primary">⚡ Sincronizar Semestre</button>
                 <button id="btn-config-projects" class="btn-outline">⚙️ Mis Proyectos</button>
                 <div id="auth-status" class="status-badge">⏳ Esperando conexión...</div>
@@ -1153,7 +1153,7 @@
                 slotEventOverlap: false, eventOrder: 'start',
                 selectable: true, selectMirror: true,
                 events: loadAllEvents,
-                datesSet: function (info) { loadWeeklySummary(false) },
+                datesSet: function (info) { cargarResumenGuardado(false) },
 
                 eventContent: function (arg) {
                     const p = arg.event.extendedProps;
@@ -1329,9 +1329,9 @@
                     data = await r.json();
                 }
 
-                if (forceGenerate || data.status === 'not_found' || !data.data) {
+                if (forceGenerate || data.status === 'not_found' || !data.contenido_json) {
                     if (!forceGenerate) {
-                        body.innerHTML = `<div class="cc-empty" style="text-align:center;padding:30px 10px;color:#64748b">Semana sin planificar.<br><br>Dale a <b>'Resumen del Día'</b> para generar uno.</div>`;
+                        body.innerHTML = `<div class="cc-empty" style="text-align:center;padding:30px 10px;color:#64748b">Semana no planificada.<br><br>Presiona <b>'Generar Resumen'</b> para empezar.</div>`;
                         return;
                     }
 
@@ -1359,7 +1359,7 @@
                 }
 
                 if (data.status === 'success') {
-                    let html = data.data
+                    let html = data.contenido_json
                         .replace(/^##\s*(.*?)/gm, '<h3 style="color:#f8fafc;margin:24px 0 12px;font-size:1.05rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:5px;text-transform:uppercase;letter-spacing:1px">$1</h3>')
                         .replace(/^#\s*(.*?)/gm, '<h2 style="color:#fff;margin:15px 0 8px;font-size:1.15rem">$1</h2>')
                         .replace(/\*\*(.*?)\*\*/g, '<b style="color:#fff">$1</b>')
@@ -1459,7 +1459,7 @@
             loadProjects();
         };
 
-        document.getElementById('btn-briefing').onclick = () => loadWeeklySummary(true);
+        document.getElementById('btn-briefing').onclick = () => cargarResumenGuardado(true);
 
         iniciarApp();
     </script>

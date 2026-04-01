@@ -598,7 +598,7 @@ def get_resumen_semanal(semana_iso: str):
     try:
         res = supabase.table("resumenes_semanales").select("contenido_json").eq("semana_iso", semana_iso).execute()
         if res.data:
-            return {"status": "success", "data": res.data[0]["contenido_json"]}
+            return {"status": "success", "contenido_json": res.data[0]["contenido_json"]}
         return {"status": "not_found"}
     except Exception as e:
         print(f"Error GET resumen_semana: {e}")
@@ -612,6 +612,11 @@ class ReqResumenSemanal(BaseModel):
 @app.post("/api/resumen-semanal")
 def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
     try:
+        # Prevención de re-generación (Seguro AI)
+        check = supabase.table("resumenes_semanales").select("contenido_json").eq("semana_iso", req.semana_iso).execute()
+        if check.data:
+            return {"status": "success", "contenido_json": check.data[0]["contenido_json"]}
+
         if not client:
             raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
 
@@ -727,13 +732,13 @@ def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
                 "semana_iso": req.semana_iso,
                 "contenido_json": resumen,
                 "fecha_creacion": datetime.utcnow().isoformat()
-            }).execute()
+            }, on_conflict="semana_iso").execute()
         except Exception as e:
             print(f"Error guardando resumen_semanal (Ignorado para retornar respuesta): {e}")
 
         return {
             "status": "success",
-            "data": resumen
+            "contenido_json": resumen
         }
 
     except HTTPException as he:
