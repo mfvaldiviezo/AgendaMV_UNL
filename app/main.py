@@ -391,20 +391,8 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
             horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
 
     # Prompt estricto para Gemini
-    system_prompt = f"""Eres un asistente de productividad académica para un profesor universitario que cursa un doctorado.
-El usuario tiene estas metas para la semana: {plan.prompt_usuario}
-
-Distribuye estas metas ÚNICAMENTE en las siguientes horas libres disponibles:
-{json.dumps(horas_libres, ensure_ascii=False, indent=2)}
-
-REGLAS ESTRICTAS:
-1. Cada tarea ocupa exactamente UNO de los bloques listados (1 hora).
-2. No inventes bloques nuevos; solo usa los del listado.
-3. Distribuye las tareas de forma balanceada entre los días.
-4. Asigna entre 3 y 8 bloques en total según la complejidad de las metas.
-5. Devuelve ÚNICAMENTE un JSON válido: un arreglo de objetos.
-6. Cada objeto: {{"dia": "YYYY-MM-DD", "hora_inicio": "HH:MM", "hora_fin": "HH:MM", "titulo": "resumen corto", "descripcion": "detalle de la tarea"}}
-7. NO incluyas backticks, markdown, ni texto adicional. SOLO el JSON."""
+    # Prompt estricto para OpenRouter
+    system_prompt = f"""Eres un Asistente Académico de Nivel Doctorado. El usuario te dará metas generales. Tu trabajo es DESGLOSAR esas metas en ideas específicas, pasos de acción y sub-tareas creativas. Si debe escribir un libro, propón estructurar capítulos específicos. Si es investigación científica o programación, sugiere qué revisar o qué código diseñar. Distribuye estas sub-tareas estratégicamente en los espacios libres proporcionados. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos: {{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen de la acción', 'descripcion': 'La idea detallada de lo que debe trabajar en ese bloque' }}. No uses markdown."""
 
     try:
         response = client.chat.completions.create(
@@ -441,7 +429,7 @@ REGLAS ESTRICTAS:
         db_data = {
             "fecha": t["dia"],
             "bloque_id": bloque_id,
-            "descripcion": f"🤖 {t['titulo']}\n{t['descripcion']}"
+            "descripcion": f"🤖 {t['titulo']} [{t['hora_inicio']} — {t['hora_fin']}]\n{t['descripcion']}"
         }
         # Upsert en Supabase
         existe = supabase.table("tareas").select("id").eq("fecha", t["dia"]).eq("bloque_id", bloque_id).execute()

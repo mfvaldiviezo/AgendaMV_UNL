@@ -742,13 +742,6 @@
         // Estado del modal: mode = 'edit' | 'create'
         let modalState = { mode: 'edit', fecha: '', bloqueId: '', source: '', activity: '', startStr: '', endStr: '' };
 
-        const RESEARCH_BLOCKS = [
-            { id: 'research_1', name: '🔬 Inv. profunda', time: '07:30-09:00', default: 'Revisar literatura y modelos de IA para control de señales de tráfico' },
-            { id: 'research_2', name: '✍️ Escritura', time: '09:00-10:30', default: 'Avanzar en la redacción y revisión del libro' },
-            { id: 'research_3', name: '📋 Gestión', time: '10:30-11:30', default: 'Preparar material y recursos para Diseño de procesos ETL' },
-            { id: 'research_4', name: '🌙 Revisión', time: '22:20-23:20', default: 'Planificar el día siguiente' }
-        ];
-
         const SCHEDULE = {
             1: { '13:00': 'AD 5 - Tutorías', '14:00': 'AD 5 - Tutorías', '15:00': 'AD 1 - ACD Ecuaciones Diferenciales', '16:00': 'AD 1 - ACD Ecuaciones Diferenciales', '17:00': 'AD 1 - ACD Álgebra Lineal', '18:00': 'AD 1 - ACD Álgebra Lineal', '19:00': 'AV 1 - Vinculación', '20:00': 'AV 1 - Vinculación' },
             2: { '13:00': 'AG 5c - Consejo Consultivo', '14:00': 'AD 1 - ACD Ecuaciones Diferenciales', '15:00': 'AD 1 - ACD Ecuaciones Diferenciales', '16:00': 'AD 1 - ACD Cálculo de una Variable', '17:00': 'AD 1 - ACD Cálculo de una Variable', '18:00': 'AD 1 - APE Cálculo de una Variable', '19:00': 'AI 1 - Investigación', '20:00': 'AI 1 - Investigación' },
@@ -943,30 +936,10 @@
                         }
                     }
 
-                    // 2) Bloques de investigación
-                    RESEARCH_BLOCKS.forEach(b => {
-                        // Saltar si hay una excepción registrada para este bloque
-                        if (excepciones.includes(b.id)) return;
-                        const saved = tareas.find(t => t.bloque_id === b.id);
-                        if (isWeekend && !saved) return;
-                        const desc = saved ? saved.descripcion : b.default;
-                        const [st, en] = b.time.split('-');
+                    // 2) Eventos custom o generados por IA (de Supabase)
+                    tareas.filter(t => t.bloque_id.startsWith('custom_') || t.bloque_id.startsWith('ia_')).forEach(t => {
                         const c = getColor('', 'doctorado');
-                        all.push({
-                            title: b.name + ': ' + desc,
-                            start: ds + 'T' + st + ':00', end: ds + 'T' + en + ':00',
-                            backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',
-                            extendedProps: {
-                                source: 'doctorado', bloqueId: b.id, fecha: ds,
-                                descripcion: desc, blockName: b.name, tareaGuardada: saved ? saved.descripcion : ''
-                            }
-                        });
-                    });
-
-                    // 3) Eventos custom creados por el usuario (bloque_id empieza con custom_)
-                    tareas.filter(t => t.bloque_id.startsWith('custom_')).forEach(t => {
-                        const c = getColor('', 'doctorado');
-                        // Extraer horas del texto: "Cat [HH:MM — HH:MM]\nDetalle"
+                        // Extraer horas del texto: "Cat [HH:MM — HH:MM]\nDetalle" (para custom) o usar 🤖 para IA
                         const timeMatch = t.descripcion.match(/\[(\d{2}:\d{2})\s*—\s*(\d{2}:\d{2})\]/);
                         const st = timeMatch ? timeMatch[1] : '08:00';
                         const en = timeMatch ? timeMatch[2] : '09:00';
