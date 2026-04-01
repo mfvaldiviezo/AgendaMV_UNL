@@ -751,16 +751,13 @@
         };
 
         function getColor(title, source) {
-            if (source === 'doctorado') return { bg: '#4f46e5', border: '#4338ca' };
             if (source === 'external') return { bg: '#475569', border: '#334155' };
-            if (title.includes('Ecuaciones Diferenciales')) return { bg: '#2563eb', border: '#1d4ed8' };
-            if (title.includes('Cálculo de una Var')) return { bg: '#0d9488', border: '#0f766e' };
-            if (title.includes('Álgebra Lineal')) return { bg: '#ea580c', border: '#c2410c' };
-            if (title.includes('Planificación') || title.includes('Evaluación')) return { bg: '#16a34a', border: '#15803d' };
-            if (title.includes('Tutorías') || title.includes('Dirección')) return { bg: '#ca8a04', border: '#a16207' };
-            if (title.includes('Investigación')) return { bg: '#7c3aed', border: '#6d28d9' };
-            if (title.includes('Vinculación')) return { bg: '#db2777', border: '#be185d' };
-            if (title.includes('Consejo Consultivo')) return { bg: '#e11d48', border: '#be123c' };
+            if (title.includes('Ecuaciones Diferenciales') || title.includes('Cálculo') || title.includes('Álgebra')) return { bg: '#2563eb', border: '#1d4ed8' }; // Azul para Clases
+            if (title.includes('Tutorías') || title.includes('Dirección')) return { bg: '#f97316', border: '#ea580c' }; // Naranja vibrante para Tutorías/Dirección
+            if (title.includes('Planificación') || title.includes('Evaluación')) return { bg: '#10b981', border: '#059669' }; // Verde Esmeralda
+            if (title.includes('Investigación') && source === 'distributivo') return { bg: '#db2777', border: '#be185d' }; // Rosa para investigación en el distributivo
+            if (title.includes('Vinculación')) return { bg: '#0ea5e9', border: '#0284c7' }; // Celeste
+            if (title.includes('Consejo Consultivo')) return { bg: '#f43f5e', border: '#e11d48' }; // Rojo
             return { bg: '#64748b', border: '#475569' };
         }
 
@@ -973,11 +970,26 @@
                             const j = await r.json();
                             (j.data || []).forEach(ev => {
                                 if (ev.origen_app === 'agendaDoctoral') return;
-                                const c = getColor('', 'external');
+
                                 const isAll = !ev.hora_inicio.includes(':');
+                                const candStart = isAll ? ds : ds + 'T' + ev.hora_inicio + ':00';
+
+                                // Filtrar duplicados: si ya existe en el local (all) para la misma hora y con texto similar, omitir
+                                const candTituloMatch = ev.titulo.replace(/[🤖📅📘]/g, '').trim().toLowerCase();
+                                const isDuplicate = all.some(a => {
+                                    if (a.start === candStart) {
+                                        const localTitle = a.title.replace(/[🤖📅📘📝]/g, '').trim().toLowerCase();
+                                        // Si comparten al menos 5 caracteres clave, es casi seguro el mismo evento
+                                        return localTitle.includes(candTituloMatch.substring(0, 5)) || candTituloMatch.includes(localTitle.substring(0, 5));
+                                    }
+                                    return false;
+                                });
+                                if (isDuplicate) return;
+
+                                const c = getColor('', 'external');
                                 all.push({
                                     title: '📅 ' + ev.titulo,
-                                    start: isAll ? ds : ds + 'T' + ev.hora_inicio + ':00',
+                                    start: candStart,
                                     end: isAll ? ds : ds + 'T' + ev.hora_fin + ':00',
                                     allDay: isAll,
                                     backgroundColor: c.bg, borderColor: c.border, textColor: '#fff',

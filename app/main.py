@@ -175,6 +175,9 @@ def guardar_tarea(tarea: Tarea, request: Request):
                 "description": tarea.descripcion,
                 "start": {"dateTime": tarea.start_iso, "timeZone": "America/Guayaquil"},
                 "end": {"dateTime": tarea.end_iso, "timeZone": "America/Guayaquil"},
+                "extendedProperties": {
+                    "private": {"origenApp": "agendaDoctoral", "bloqueId": tarea.bloque_id}
+                }
             }
             try:
                 result = upsert_event(gcal_headers, gcal_id, gcal_payload)
