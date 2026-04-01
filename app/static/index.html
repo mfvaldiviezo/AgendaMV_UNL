@@ -391,6 +391,142 @@
             background: rgba(79, 70, 229, .15) !important
         }
 
+        /* AI Planning Button */
+        .btn-ia {
+            background: linear-gradient(135deg, #7c3aed, #a855f7, #ec4899);
+            color: #fff;
+            font-weight: 700;
+            font-size: .85rem;
+            padding: 10px 20px;
+            border-radius: 40px;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            animation: shimmer 3s infinite
+        }
+
+        @keyframes shimmer {
+
+            0%,
+            100% {
+                box-shadow: 0 0 8px rgba(124, 58, 237, .3)
+            }
+
+            50% {
+                box-shadow: 0 0 20px rgba(168, 85, 247, .6)
+            }
+        }
+
+        .btn-ia:hover {
+            transform: scale(1.04);
+            box-shadow: 0 4px 20px rgba(124, 58, 237, .5)
+        }
+
+        /* AI Modal */
+        .ia-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, .6);
+            backdrop-filter: blur(8px);
+            z-index: 9000;
+            justify-content: center;
+            align-items: center
+        }
+
+        .ia-overlay.active {
+            display: flex
+        }
+
+        .ia-modal {
+            background: #fff;
+            border-radius: 24px;
+            width: 95%;
+            max-width: 560px;
+            padding: 28px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, .15)
+        }
+
+        .ia-modal h3 {
+            font-size: 1.2rem;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #7c3aed, #ec4899);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent
+        }
+
+        .ia-modal p {
+            font-size: .82rem;
+            color: #64748b;
+            margin-bottom: 16px
+        }
+
+        .ia-textarea {
+            width: 100%;
+            min-height: 120px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 14px;
+            font-family: 'Inter', sans-serif;
+            font-size: .88rem;
+            resize: vertical;
+            transition: border .2s
+        }
+
+        .ia-textarea:focus {
+            outline: none;
+            border-color: #7c3aed
+        }
+
+        .ia-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 16px
+        }
+
+        .ia-loading {
+            text-align: center;
+            padding: 20px;
+            display: none
+        }
+
+        .ia-loading.active {
+            display: block
+        }
+
+        .ia-loading .spinner {
+            display: inline-block;
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #7c3aed;
+            border-radius: 50%;
+            animation: spin 1s linear infinite
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg)
+            }
+
+            100% {
+                transform: rotate(360deg)
+            }
+        }
+
+        .ia-loading p {
+            color: #7c3aed;
+            font-weight: 600;
+            font-size: .85rem;
+            margin-top: 10px
+        }
+
         .toast {
             position: fixed;
             bottom: 24px;
@@ -509,6 +645,7 @@
                 <button id="btn-logout" class="btn-outline" style="display:none">🚪 Desconectar</button>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <button id="btn-ia-plan" class="btn-ia">✨ Planificar Semana con IA</button>
                 <button id="btn-sync-semester" class="btn-primary">⚡ Sincronizar Semestre</button>
                 <div id="auth-status" class="status-badge">⏳ Esperando conexión...</div>
             </div>
@@ -574,6 +711,27 @@
                 <button class="btn-danger" id="modal-btn-delete">🗑️ Borrar</button>
                 <button class="btn-outline" id="modal-btn-cancel">Cancelar</button>
                 <button class="btn-primary" id="modal-btn-save">💾 Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal IA Planificación -->
+    <div class="ia-overlay" id="ia-overlay">
+        <div class="ia-modal">
+            <div id="ia-form-section">
+                <h3>✨ Planificador Semanal con IA</h3>
+                <p>Describe tus metas de investigación, desarrollo o estudio para esta semana. Gemini analizará tu
+                    agenda y asignará bloques de tiempo en tus horas libres.</p>
+                <textarea class="ia-textarea" id="ia-prompt"
+                    placeholder="Ej: Necesito avanzar en el capítulo 3 de la tesis sobre modelos de IA para control de tráfico, revisar 5 papers sobre reinforcement learning, y preparar la presentación del viernes para el comité doctoral..."></textarea>
+                <div class="ia-footer">
+                    <button class="btn-outline" id="ia-cancel">Cancelar</button>
+                    <button class="btn-ia" id="ia-send">🤖 Generar Plan</button>
+                </div>
+            </div>
+            <div class="ia-loading" id="ia-loading">
+                <div class="spinner"></div>
+                <p>🧠 Gemini está analizando tu semana...</p>
             </div>
         </div>
     </div>
@@ -988,6 +1146,81 @@
                 } else { alert('Error: ' + (d.mensaje || 'desconocido')) }
             } catch (e) { console.error(e); alert('Error de conexión.') }
             finally { btn.innerHTML = orig; btn.disabled = false }
+        };
+
+        // === AGENTE IA: Planificación Semanal ===
+        function getMonday(d) {
+            const date = new Date(d);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(date.setDate(diff));
+            return monday.getFullYear() + '-' + String(monday.getMonth() + 1).padStart(2, '0') + '-' + String(monday.getDate()).padStart(2, '0');
+        }
+
+        document.getElementById('btn-ia-plan').onclick = () => {
+            document.getElementById('ia-prompt').value = '';
+            document.getElementById('ia-form-section').style.display = '';
+            document.getElementById('ia-loading').classList.remove('active');
+            document.getElementById('ia-overlay').classList.add('active');
+            setTimeout(() => document.getElementById('ia-prompt').focus(), 100);
+        };
+
+        document.getElementById('ia-cancel').onclick = () => {
+            document.getElementById('ia-overlay').classList.remove('active');
+        };
+
+        document.getElementById('ia-overlay').onclick = (e) => {
+            if (e.target === document.getElementById('ia-overlay')) {
+                document.getElementById('ia-overlay').classList.remove('active');
+            }
+        };
+
+        document.getElementById('ia-send').onclick = async () => {
+            const prompt = document.getElementById('ia-prompt').value.trim();
+            if (!prompt) { alert('Describe al menos una meta para tu semana.'); return; }
+
+            // Calcular el lunes de la semana que se está viendo en el calendario
+            let fechaLunes;
+            if (calendar) {
+                fechaLunes = getMonday(calendar.getDate());
+            } else {
+                fechaLunes = getMonday(new Date());
+            }
+
+            // Mostrar loading
+            document.getElementById('ia-form-section').style.display = 'none';
+            document.getElementById('ia-loading').classList.add('active');
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+
+                const r = await fetch('/api/planificar-semana-ia', {
+                    method: 'POST', headers,
+                    body: JSON.stringify({
+                        prompt_usuario: prompt,
+                        fecha_inicio_semana: fechaLunes,
+                        token_google: accessToken || ''
+                    })
+                });
+
+                const data = await r.json();
+
+                if (r.ok) {
+                    document.getElementById('ia-overlay').classList.remove('active');
+                    if (calendar) calendar.refetchEvents();
+                    showToast('✨ ¡Plan generado! ' + data.tareas_generadas + ' tareas añadidas a tu semana');
+                } else {
+                    document.getElementById('ia-form-section').style.display = '';
+                    document.getElementById('ia-loading').classList.remove('active');
+                    showToast('❌ Error: ' + (data.detail || 'Error desconocido'), 'error');
+                }
+            } catch (e) {
+                document.getElementById('ia-form-section').style.display = '';
+                document.getElementById('ia-loading').classList.remove('active');
+                showToast('❌ Error de conexión', 'error');
+                console.error(e);
+            }
         };
 
         iniciarApp();

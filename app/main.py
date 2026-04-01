@@ -1,7 +1,9 @@
 import os
 import re
+import json
 import base64
 import requests
+import google.generativeai as genai
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,11 @@ supabase: Client = create_client(url, key)
 # Cargar claves de Google
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+
+# Configurar Gemini
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 GCAL_BASE = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 
@@ -349,6 +356,108 @@ def obtener_configuracion():
         "GOOGLE_API_KEY": GOOGLE_API_KEY,
         "GOOGLE_CLIENT_ID": GOOGLE_CLIENT_ID
     }
+
+# === AGENTE IA: Planificación Semanal con Gemini ===
+
+class PlanIA(BaseModel):
+    prompt_usuario: str
+    fecha_inicio_semana: str  # YYYY-MM-DD (lunes)
+    token_google: str = ""
+
+@app.post("/api/planificar-semana-ia")
+def planificar_semana_ia(plan: PlanIA, request: Request):
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY no configurada")
+
+    # Calcular horas libres Lun-Vie (07:00-12:00 siempre libre, 12:00-13:00 almuerzo)
+    fecha_lunes = datetime.strptime(plan.fecha_inicio_semana, "%Y-%m-%d")
+    horas_libres = []
+    for day_offset in range(5):  # Lun a Vie
+        d = fecha_lunes + timedelta(days=day_offset)
+        ds = d.strftime("%Y-%m-%d")
+        dia_nombre = DAY_NAMES[d.weekday()]
+        occupied = set(SCHEDULE_DATA.get(d.weekday(), {}).keys())
+        # Bloques de mañana (07:00-12:00) siempre libres
+        for h in range(7, 12):
+            hora = f"{h:02d}:00"
+            horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
+        # Bloques de tarde/noche (21:00-23:00) — siempre libre
+        for h in range(21, 23):
+            hora = f"{h:02d}:00"
+            horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
+
+    # Prompt estricto para Gemini
+    system_prompt = f"""Eres un asistente de productividad académica para un profesor universitario que cursa un doctorado.
+El usuario tiene estas metas para la semana: {plan.prompt_usuario}
+
+Distribuye estas metas ÚNICAMENTE en las siguientes horas libres disponibles:
+{json.dumps(horas_libres, ensure_ascii=False, indent=2)}
+
+REGLAS ESTRICTAS:
+1. Cada tarea ocupa exactamente UNO de los bloques listados (1 hora).
+2. No inventes bloques nuevos; solo usa los del listado.
+3. Distribuye las tareas de forma balanceada entre los días.
+4. Asigna entre 3 y 8 bloques en total según la complejidad de las metas.
+5. Devuelve ÚNICAMENTE un JSON válido: un arreglo de objetos.
+6. Cada objeto: {{"dia": "YYYY-MM-DD", "hora_inicio": "HH:MM", "hora_fin": "HH:MM", "titulo": "resumen corto", "descripcion": "detalle de la tarea"}}
+7. NO incluyas backticks, markdown, ni texto adicional. SOLO el JSON."""
+
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(system_prompt)
+        raw_text = response.text.strip()
+        # Limpiar backticks de markdown
+        if raw_text.startswith("```"):
+            raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
+            raw_text = re.sub(r'\s*```$', '', raw_text)
+        print(f"GEMINI RAW: {raw_text[:500]}")
+        tareas_ia = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        print(f"GEMINI JSON ERROR: {e}\nRAW: {raw_text[:500]}")
+        raise HTTPException(status_code=422, detail=f"Gemini devolvió JSON inválido: {str(e)}")
+    except Exception as e:
+        print(f"GEMINI ERROR: {e}")
+        raise HTTPException(status_code=500, detail=f"Error de Gemini: {str(e)}")
+
+    # Guardar en Supabase + Google Calendar
+    auth_header = request.headers.get("Authorization", "")
+    gcal_headers = None
+    if auth_header.startswith("Bearer "):
+        gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+
+    guardadas = 0
+    for t in tareas_ia:
+        bloque_id = f"ia_{t['dia'].replace('-','')}{t['hora_inicio'].replace(':','')}"
+        db_data = {
+            "fecha": t["dia"],
+            "bloque_id": bloque_id,
+            "descripcion": f"🤖 {t['titulo']}\n{t['descripcion']}"
+        }
+        # Upsert en Supabase
+        existe = supabase.table("tareas").select("id").eq("fecha", t["dia"]).eq("bloque_id", bloque_id).execute()
+        if existe.data:
+            supabase.table("tareas").update({"descripcion": db_data["descripcion"]}).eq("id", existe.data[0]["id"]).execute()
+        else:
+            supabase.table("tareas").insert([db_data]).execute()
+        guardadas += 1
+
+        # Google Calendar sync
+        if gcal_headers:
+            gcal_id = generate_task_gcal_id(t["dia"], bloque_id)
+            start_iso = f"{t['dia']}T{t['hora_inicio']}:00"
+            end_iso = f"{t['dia']}T{t['hora_fin']}:00"
+            gcal_payload = {
+                "summary": f"🤖 {t['titulo']}",
+                "description": t["descripcion"],
+                "start": {"dateTime": start_iso, "timeZone": "America/Guayaquil"},
+                "end": {"dateTime": end_iso, "timeZone": "America/Guayaquil"},
+            }
+            try:
+                upsert_event(gcal_headers, gcal_id, gcal_payload)
+            except Exception as e:
+                print(f"GCAL IA ERROR: {e}")
+
+    return {"status": "success", "tareas_generadas": guardadas, "detalle": tareas_ia}
 
 # Servir el Frontend estático
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
