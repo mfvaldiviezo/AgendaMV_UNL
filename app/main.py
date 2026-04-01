@@ -591,44 +591,53 @@ def actualizar_proyecto(p_id: str, data: ProyectoUpdate):
         print(f"Error actualizar_proyecto: {e}")
         return {"status": "error", "detail": str(e)}
 
-# === RESUMEN DIARIO (Daily Briefing) ===
+# === RESUMEN SEMANAL PERSISTENTE ===
 
-@app.get("/api/resumen-diario")
-def resumen_diario(request: Request):
+@app.get("/api/resumen-semanal/{semana_iso}")
+def get_resumen_semanal(semana_iso: str):
+    try:
+        res = supabase.table("resumenes_semanales").select("contenido_json").eq("semana_iso", semana_iso).execute()
+        if res.data:
+            return {"status": "success", "data": res.data[0]["contenido_json"]}
+        return {"status": "not_found"}
+    except Exception as e:
+        print(f"Error GET resumen_semana: {e}")
+        raise HTTPException(status_code=500, detail="Error leyendo resumenes.")
+
+class ReqResumenSemanal(BaseModel):
+    semana_iso: str
+    fecha_inicio: str
+    fecha_fin: str
+
+@app.post("/api/resumen-semanal")
+def generar_resumen_semanal(req: ReqResumenSemanal, request: Request):
     try:
         if not client:
             raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
 
-        # Fecha actual en hora Ecuador (UTC-5) — 100% dinámica
-        ecuador_tz = pytz.timezone('America/Guayaquil')
-        hoy = datetime.now(ecuador_tz).date()
-        manana = hoy + timedelta(days=1)
-        fecha_hoy_str = hoy.strftime("%Y-%m-%d")
-        fecha_manana_str = manana.strftime("%Y-%m-%d")
-        
         auth_header = request.headers.get("Authorization", "")
 
         def obtener_contexto_proyectos():
             try:
                 res = supabase.table("proyectos_investigacion").select("*").execute()
                 if res.data:
-                    contexto = "MEMORIA DE PROYECTOS Y CÁTEDRAS (RAG):\n"
+                    contexto = "MEMORIA DE PROYECTOS (RAG):\n"
                     for p in res.data:
                         cod = p.get('codigo', '')
                         nom = p.get('nombre_proyecto', '')
                         desc = p.get('descripcion_general', '')
                         avances = p.get('avances_recientes', '')
-                        contexto += f"[{cod}] {nom} -> Misión: {desc}. \nÚltimos Avances: {avances}\n"
+                        contexto += f"[{cod}] {nom} -> Misión: {desc}. Avances: {avances}\n"
                     return contexto
             except Exception as e:
-                print(f"RAG Fallback (Tabla proyectos_investigacion no encontrada): {e}")
+                print(f"RAG Fallback: {e}")
             return PROJECTS_CONTEXT
 
-        def get_gcal_externos(fecha_str: str):
+        def get_gcal_externos(f_inicio_str, f_fin_str):
             if not auth_header.startswith("Bearer "): return []
             headers = {"Authorization": auth_header, "Content-Type": "application/json"}
-            time_min = f"{fecha_str}T00:00:00-05:00"
-            time_max = f"{fecha_str}T23:59:59-05:00"
+            time_min = f"{f_inicio_str}T00:00:00-05:00"
+            time_max = f"{f_fin_str}T23:59:59-05:00"
             params = {"timeMin": time_min, "timeMax": time_max, "singleEvents": "true", "orderBy": "startTime"}
             ext = []
             try:
@@ -639,70 +648,67 @@ def resumen_diario(request: Request):
                         if origen != "agendaDoctoral":
                             titulo = item.get("summary", "(Sin título)")
                             start = item.get("start", {})
-                            hora = start.get("dateTime", start.get("date", ""))
-                            if "T" in hora:
-                                ext.append(f"  - [{hora.split('T')[1][:5]}] [Reunión Externa] {titulo}")
+                            d_str = start.get("dateTime", start.get("date", ""))
+                            if "T" in d_str:
+                                dia, hora = d_str.split('T')
+                                ext.append(f"  - [{dia} {hora[:5]}] [EXTERNO GCAL] {titulo}")
                             else:
-                                ext.append(f"  - [Todo el día] [Reunión Externa] {titulo}")
+                                ext.append(f"  - [{d_str} Todo el día] [EXTERNO GCAL] {titulo}")
             except Exception as e:
-                print(f"Error fetch GCAL en briefing ({fecha_str}): {e}")
+                print(f"Error fetch GCAL: {e}")
             return ext
 
-        def get_agenda_dia(fecha_str: str):
-            """Obtiene eventos de DB + clases del distributivo para un día."""
-            eventos = []
-            # 1. Clases del distributivo
-            dia_semana = datetime.strptime(fecha_str, "%Y-%m-%d").weekday()
-            clases = SCHEDULE_DATA.get(dia_semana, {})
-            for hora, actividad in clases.items():
-                eventos.append(f"  - [{hora}] {actividad}")
-            # 2. Tareas de Supabase
+        # Armar la agenda de la semana
+        agenda_semana = []
+        
+        # 1. GCAL Externos (Priridad 1)
+        agenda_semana.extend(get_gcal_externos(req.fecha_inicio, req.fecha_fin))
+        
+        # Iterar días para Tareas y Clases (Prioridades 2 y 3)
+        curr_date = datetime.strptime(req.fecha_inicio, "%Y-%m-%d")
+        end_date = datetime.strptime(req.fecha_fin, "%Y-%m-%d")
+        
+        while curr_date <= end_date:
+            fecha_str = curr_date.strftime("%Y-%m-%d")
+            dia_semana = curr_date.weekday()
+            
+            # Tareas DB
             try:
                 tareas = supabase.table("tareas").select("bloque_id, descripcion").eq("fecha", fecha_str).execute()
-                print(f"DEBUG Supabase Tareas ({fecha_str}): {tareas.data}")
-                for tarea in (tareas.data or []):
-                    desc = tarea.get("descripcion", "")[:120]
-                    eventos.append(f"  - [Tarea] {desc}")
+                for t in (tareas.data or []):
+                    agenda_semana.append(f"  - [{fecha_str}] [INV/Misión] {t.get('descripcion', '')[:80]}")
             except Exception as e:
-                print(f"Error consultando tareas para {fecha_str}: {e}")
-            
-            # 3. Reuniones externas de Google Calendar
-            eventos.extend(get_gcal_externos(fecha_str))
-            
-            if not eventos:
-                return ["  - (Día libre / sin actividades registradas)"]
-            return eventos
+                pass
+                
+            # Clases
+            clases = SCHEDULE_DATA.get(dia_semana, {})
+            for hora, act in clases.items():
+                agenda_semana.append(f"  - [{fecha_str} {hora}] [DOCENCIA/GESTIÓN] {act}")
+                
+            curr_date += timedelta(days=1)
 
-        agenda_hoy = "\n".join(get_agenda_dia(fecha_hoy_str))
-        agenda_manana = "\n".join(get_agenda_dia(fecha_manana_str))
-        dia_nombre_hoy = DAY_NAMES[hoy.weekday()]
-        dia_nombre_manana = DAY_NAMES[manana.weekday()]
-
-        user_prompt = (
-            f"Agenda de HOY ({dia_nombre_hoy} {fecha_hoy_str}):\n{agenda_hoy}\n\n"
-            f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
-        )
+        user_prompt = f"Agenda de la Semana ({req.semana_iso}):\n" + "\n".join(agenda_semana)
+        
         system_prompt = (
             f"Eres el Arquitecto Técnico de la agenda de Marcelo.\n\n"
-            f"{obtener_contexto_proyectos()}\n\n"
-            f"Regla de Oro: Cero prosa innecesaria. Usa el contexto de la tabla de proyectos para dar un sentido visceral a las horas.\n"
-            f"Tu mandato es producir un reporte ULTRA-PUNTUAL estrictamente con este formato exacto (Usa Markdown y los emojis indicados):\n\n"
-            f"## HOY {hoy.strftime('%d/%m')}:\n\n"
-            f"🔴 CRÍTICO: [Hora/Rango] [Nombre de la reunión externa o clase vital con su impacto inmediato].\n\n"
-            f"🔬 TESIS: [Hora/Rango] [Avance técnico estricto, Ej. Refinar Isolation Forest - Capítulo 3].\n\n"
-            f"🎓 SABIA-UNL: [Hora/Rango] [Desarrollo o tarea específica según el horario].\n\n"
-            f"## MAÑANA:\n\n"
-            f"⚠️ PREPARAR: [Acción concreta hoy que destraba su mañana en el horario del {dia_nombre_manana}].\n\n"
-            f"Instrucciones restrictivas:\n"
-            f"- NO uses viñetas genéricas (-).\n"
-            f"- SI NO HAY tareas para un área hoy, omite esa etiqueta en vez de poner 'No hay tareas'.\n"
-            f"- Tono: Hacker / Arquitecto. Directo a la vena. Máximo 130 palabras."
+            f"Contexto: {obtener_contexto_proyectos()}\n\n"
+            f"PROHIBICIÓN ESTRICTA: No menciones nombres de proyectos específicos como SABIA, YOLO, etc. Usa únicamente las categorías mayores: GESTIÓN, INVESTIGACIÓN, DOCENCIA.\n\n"
+            f"PRIORIDAD CRÍTICA #1: Lo primero en el texto DEBE ser cualquier evento que venga de Google Calendar (marcado en el texto como [EXTERNO GCAL]). Si hay reuniones externas, lístalas todas al principio como prioridad máxima absoluta.\n\n"
+            f"ALINEACIÓN VISUAL: El resumen debe basarse estrictamente en los bloques del horario. Si ves un bloque [DOCENCIA/GESTIÓN] como 'AD 5', agrupalo en la categoría DOCENCIA de forma ultra resumida.\n\n"
+            f"Estructura EXACTA (Cero prosa, usa Markdown):\n\n"
+            f"## PRIORIDAD CRÍTICA (EVENTOS EXTERNOS):\n"
+            f"[Día - Hora] [Título]\n\n"
+            f"## INVESTIGACIÓN:\n"
+            f"[Día - Rango Hora] (Avance breve).\n\n"
+            f"## DOCENCIA Y GESTIÓN:\n"
+            f"Resumen corto de los bloques docentes de la semana.\n\n"
+            f"Tono: Terminal hacker, directo. Máximo 180 palabras."
         )
 
         try:
             response = client.chat.completions.create(
                 model="openrouter/auto",
-                max_tokens=400,
+                max_tokens=600,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -711,19 +717,25 @@ def resumen_diario(request: Request):
             resumen = response.choices[0].message.content.strip()
         except Exception as e:
             print(f"LLM RESUMEN ERROR: {e}")
-            raise HTTPException(status_code=502, detail=f"Fallo en la comunicación con la IA")
+            raise HTTPException(status_code=502, detail=f"Fallo en comunicación IA")
+
+        # Guardar en persistencia
+        supabase.table("resumenes_semanales").upsert({
+            "semana_iso": req.semana_iso,
+            "contenido_json": resumen,
+            "fecha_creacion": datetime.utcnow().isoformat()
+        }).execute()
 
         return {
-            "fecha_hoy": fecha_hoy_str,
-            "fecha_manana": fecha_manana_str,
-            "resumen": resumen
+            "status": "success",
+            "data": resumen
         }
 
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"CRITICAL ERROR /api/resumen-diario: {e}")
-        raise HTTPException(status_code=500, detail="Error interno procesando el resumen diario.")
+        print(f"CRITICAL ERROR /api/resumen-semanal: {e}")
+        raise HTTPException(status_code=500, detail="Error interno procesando el resumen.")
 
 
 # Servir el Frontend estático
