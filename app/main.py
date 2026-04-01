@@ -408,7 +408,7 @@ REGLAS ESTRICTAS:
 
     try:
         response = client.chat.completions.create(
-            model="google/gemini-2.0-flash:free",
+            model="google/gemini-2.0-flash-exp:free",
             max_tokens=2000,
             messages=[
                 {"role": "system", "content": "Eres un asistente de productividad. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos que contengan: dia (YYYY-MM-DD), hora_inicio (HH:MM), hora_fin (HH:MM), titulo, descripcion. No uses backticks de markdown."},
