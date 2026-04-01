@@ -46,6 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === CONTEXTO DE PROYECTOS (BASE DE CONOCIMIENTO) ===
+PROJECTS_CONTEXT = """
+Tesis Doctoral: Optimización de tráfico y seguridad vial mediante detección de comportamiento anormal de conductores usando YOLO (detección) e Isolation Forest/LSTM (anomalías).
+Proyecto AsistIA: Desarrollo de un tutor inteligente para la UNL.
+Libro: Memoria personal sobre resiliencia y superación.
+Vinculación: Proyectos de impacto social con tecnología en la región de Loja.
+"""
+
 # === DISTRIBUTIVO DOCENTE ===
 SCHEDULE_DATA = {
     0: {"13:00": "AD 5 - Tutorías", "14:00": "AD 5 - Tutorías", "15:00": "AD 1 - ACD Ecuaciones Diferenciales", "16:00": "AD 1 - ACD Ecuaciones Diferenciales", "17:00": "AD 1 - ACD Álgebra Lineal", "18:00": "AD 1 - ACD Álgebra Lineal", "19:00": "AV 1 - Vinculación", "20:00": "AV 1 - Vinculación"},
@@ -516,11 +524,7 @@ def resumen_diario(request: Request):
         auth_header = request.headers.get("Authorization", "")
 
         def obtener_contexto_proyectos():
-            return (
-                "CONTEXTO DE PROYECTOS ACTUALES:\n"
-                "- Tesis Doctoral: Modelo predictivo de Tráfico con YOLO e Isolation Forest / LSTM.\n"
-                "- Vinculación/Docencia: SABIA-UNL y AsistIA V7.\n"
-            )
+            return PROJECTS_CONTEXT
 
         def get_gcal_externos(fecha_str: str):
             if not auth_header.startswith("Bearer "): return []
@@ -581,14 +585,16 @@ def resumen_diario(request: Request):
             f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
         )
         system_prompt = (
-            f"Aquí tienes la visión completa de la agenda de Marcelo.\n\n{obtener_contexto_proyectos()}\n"
-            f"Lee su agenda de HOY y MAÑANA. Incluye reuniones externas, clases y tareas de IA.\n"
-            f"Prioriza las reuniones externas ya que son compromisos con otras personas, y ajusta los consejos de avance en la tesis (YOLO/LSTM) según el tiempo libre real.\n"
-            f"Menciona al final una 'Alerta para mañana' basada en el horario del {dia_nombre_manana}.\n"
-            f"Formato OBLIGATORIO:\n"
-            f"## 🌅 Prioridades del Día\n(3 viñetas)\n"
-            f"## ⚡ Alerta de Mañana\n(1 frase)\n"
-            f"Tono: profesional, urgente y estratégico. Máximo 140 palabras."
+            f"Eres el estratega y colega investigador PhD de Marcelo. Conoces profundamente su contexto:\n"
+            f"{obtener_contexto_proyectos()}\n\n"
+            f"Tu objetivo es SINTETIZAR. No listes todos los eventos mecánicamente.\n"
+            f"1. Prioridades de HOY (Máx 3): Identifica los hitos críticos. Si hay una reunión externa, explícale por qué es vital cumplir ese compromiso. Si tiene bloques enteros en la Tesis (YOLO/LSTM), exígele avances técnicos específicos acordes a su nivel.\n"
+            f"2. Omisión de Ruido: Ignora tareas genéricas o de 'continuous work' a menos que bloqueen el progreso.\n"
+            f"3. Estrategia Mañana ({dia_nombre_manana}): Menciona UNICAMENTE lo que debe dejar listo HOY para que la jornada de mañana sea invencible.\n\n"
+            f"Formato Mínimo Viable (SIN listas aburridas. Usa párrafos potentes y directos en markdown):\n"
+            f"## 🎯 Foco Estratégico de Hoy\n(1-2 párrafos narrativos)\n\n"
+            f"## ⚡ Estrategia para Mañana\n(1 párrafo breve)\n\n"
+            f"Tono: Colega PhD, altamente técnico, directo y motivador. Máximo 160 palabras."
         )
 
         try:
