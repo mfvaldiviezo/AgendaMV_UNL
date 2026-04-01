@@ -1296,22 +1296,23 @@
         // ==========================================
         // COMMAND CENTER (RESUMEN SEMANAL PERSISTENTE)
         // ==========================================
-        function obtenerSemanaISO(d) {
-            const date = new Date(d.getTime());
-            date.setHours(0, 0, 0, 0);
-            date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-            const week1 = new Date(date.getFullYear(), 0, 4);
-            const weekNumber = 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-            return `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
+        function obtenerSemanaID(date) {
+            const d = new Date(date);
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+            const week1 = new Date(d.getFullYear(), 0, 4);
+            const week = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+            return `${d.getFullYear()}-W${week.toString().padStart(2, '0')}`;
         }
 
         async function cargarResumenGuardado(forceGenerate = false) {
-            const body = document.getElementById('cc-events');
+            const body = document.getElementById('cc-events'); // Este es el Contenedor Resumen
 
             if (!calendar) return; // Si no hay calendario listo
 
-            const st = calendar.view.activeStart;
-            const semanaIso = obtenerSemanaISO(st);
+            // Usar currentStart en lugar de activeStart para alinear estrictamente a la semana vista
+            const st = calendar.view.currentStart;
+            const semanaIso = obtenerSemanaID(st);
             const en = new Date(calendar.view.activeEnd.getTime() - 86400000);
 
             if (forceGenerate) {
@@ -1391,7 +1392,7 @@
                     }).join('');
 
                     body.innerHTML = `<div style="width:100%;font-size:0.95rem">${html}</div>`;
-                } else {
+                } else if (!forceGenerate) {
                     body.innerHTML = `<div class="cc-empty" style="color:#ef4444">⚠️ Error recuperando el resumen: ${data.detail || 'Desconocido'}</div>`;
                 }
             } catch (e) {
