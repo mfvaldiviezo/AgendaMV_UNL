@@ -1296,18 +1296,14 @@
         // ==========================================
         // COMMAND CENTER (RESUMEN SEMANAL PERSISTENTE)
         // ==========================================
-        function getWeekID(date) {
-            const target = new Date(date);
-            const dayNr = (date.getDay() + 6) % 7;
-            target.setDate(target.getDate() - dayNr + 3);
-            const firstThursday = target.valueOf();
-            target.setMonth(0, 1);
-            if (target.getDay() !== 4) {
-                target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
-            }
-            const weekID = 1 + Math.ceil((firstThursday - target) / 604800000);
-            const year = new Date(firstThursday).getFullYear();
-            return `${year}-W${weekID.toString().padStart(2, '0')}`;
+        function getIsoWeekID(dateInput) {
+            const date = new Date(dateInput);
+            date.setHours(0, 0, 0, 0);
+            // Jueves de la semana actual determina el año ISO
+            date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+            const week1 = new Date(date.getFullYear(), 0, 4);
+            const weekNumber = 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+            return `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
         }
 
         async function cargarResumenGuardado(forceGenerate = false) {
@@ -1317,7 +1313,7 @@
 
             // Usar currentStart en lugar de activeStart para alinear estrictamente a la semana vista
             const st = calendar.view.currentStart;
-            const semanaIso = getWeekID(st);
+            const semanaIso = getIsoWeekID(st);
             const en = new Date(calendar.view.activeEnd.getTime() - 86400000);
 
             if (forceGenerate) {
@@ -1371,32 +1367,12 @@
                 }
 
                 if (data.status === 'success' || data.contenido_json) {
-                    let html = data.contenido_json
-                        .replace(/^##\s*(.*?)/gm, '<h3 style="color:#f8fafc;margin:24px 0 12px;font-size:1.05rem;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:5px;text-transform:uppercase;letter-spacing:1px">$1</h3>')
-                        .replace(/^#\s*(.*?)/gm, '<h2 style="color:#fff;margin:15px 0 8px;font-size:1.15rem">$1</h2>')
-                        .replace(/\*\*(.*?)\*\*/g, '<b style="color:#fff">$1</b>')
-                        .replace(/\*(.*?)\*/g, '<i style="color:#cbd5e1">$1</i>');
+                    let contenido = typeof data.contenido_json === 'object'
+                        ? JSON.stringify(data.contenido_json)
+                        : data.contenido_json;
 
-                    let currentStyle = "border-left:3px solid #334155;";
-                    html = html.split('\n\n').map(p => {
-                        const trimmed = p.trim();
-                        if (trimmed.startsWith('<h')) {
-                            const upperH = trimmed.toUpperCase();
-                            if (upperH.includes('CRÍTICO')) currentStyle = "border-left:6px solid #ef4444;";
-                            else if (upperH.includes('INVESTIGACIÓN') || upperH.includes('DOCENCIA')) currentStyle = "border-left:4px solid #8b5cf6;";
-                            else if (upperH.includes('ANTICIPO')) currentStyle = "border-left:4px solid #facc15;";
-                            else currentStyle = "border-left:3px solid #334155;";
-                            return p;
-                        }
-                        if (trimmed.length === 0) return '';
-
-                        let parsedText = p.replace(/\[([^\]]+)\]/g, '<span style="font-family:\'Courier New\', Courier, monospace;background:#1e293b;padding:2px 8px;border-radius:4px;color:#94a3b8;font-size:0.85rem;margin:0 6px;letter-spacing:0.5px">[$1]</span>');
-                        parsedText = parsedText.replace(/(CRÍTICO|INVESTIGACIÓN|DOCENCIA|GESTIÓN|ANTICIPO)/g, '<strong style="color:#ffffff">$1</strong>');
-
-                        return `<div style="margin-bottom:14px;color:#cbd5e1;line-height:1.6;font-size:0.95rem;padding-left:12px;${currentStyle}">${parsedText.replace(/\n/g, '<br>')}</div>`;
-                    }).join('');
-
-                    body.innerHTML = `<div style="width:100%;font-size:0.95rem">${html}</div>`;
+                    // Aquí utilizamos el contenedor exacto definido en el HTML (cc-events)
+                    document.getElementById('cc-events').innerHTML = `<pre style="font-family:inherit;white-space:pre-wrap;color:#cbd5e1;font-size:0.95rem;">${contenido}</pre>`;
                 } else if (!forceGenerate) {
                     body.innerHTML = `<div class="cc-empty" style="color:#ef4444">⚠️ Error recuperando el resumen: ${data.detail || 'Desconocido'}</div>`;
                 }
