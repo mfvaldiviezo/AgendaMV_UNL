@@ -690,14 +690,13 @@
             try {
                 const headers = { 'Content-Type': 'application/json' };
                 if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
-                // Extraer hora_inicio y hora_fin del modalState
-                const hiRaw = modalState.startStr || '';
-                const hfRaw = modalState.endStr || '';
-                const hora_inicio = hiRaw.includes('T') ? hiRaw.split('T')[1].substring(0, 5) : '';
-                const hora_fin = hfRaw.includes('T') ? hfRaw.split('T')[1].substring(0, 5) : '';
+                // Enviar ISO datetimes completos al backend (fuente de verdad para Google Calendar)
+                const start_iso = modalState.startStr ? new Date(modalState.startStr).toISOString() : '';
+                const end_iso = modalState.endStr ? new Date(modalState.endStr).toISOString() : '';
+                console.log('SYNC DEBUG: start_iso=' + start_iso + ', end_iso=' + end_iso);
                 const r = await fetch('/api/tareas', {
                     method: 'POST', headers,
-                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc, hora_inicio, hora_fin })
+                    body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc, start_iso, end_iso })
                 });
                 const data = await r.json();
                 closeModal();

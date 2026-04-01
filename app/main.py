@@ -47,8 +47,8 @@ class Tarea(BaseModel):
     fecha: str
     bloque_id: str
     descripcion: str
-    hora_inicio: str = ""
-    hora_fin: str = ""
+    start_iso: str = ""
+    end_iso: str = ""
 
 class SyncCiclo(BaseModel):
     token: str
@@ -86,21 +86,24 @@ def upsert_event(headers: dict, event_id: str, payload: dict) -> str:
     get_res = requests.get(f"{GCAL_BASE}/{event_id}", headers=headers)
 
     if get_res.status_code == 200:
-        # El evento ya existe → actualizar la serie completa
         put_res = requests.put(
             f"{GCAL_BASE}/{event_id}",
             headers=headers,
             json=payload,
         )
+        if put_res.status_code != 200:
+            print(f"GCAL UPDATE ERROR [{put_res.status_code}]: {put_res.text}")
         return "updated" if put_res.status_code == 200 else "error"
 
     elif get_res.status_code == 404:
-        # No existe → crear con ID determinista
         payload["id"] = event_id
         post_res = requests.post(GCAL_BASE, headers=headers, json=payload)
+        if post_res.status_code != 200:
+            print(f"GCAL INSERT ERROR [{post_res.status_code}]: {post_res.text}")
         return "created" if post_res.status_code == 200 else "error"
 
     else:
+        print(f"GCAL GET ERROR [{get_res.status_code}]: {get_res.text}")
         return "error"
 
 
@@ -148,28 +151,33 @@ def guardar_tarea(tarea: Tarea, request: Request):
 
     # Google Calendar: sync si hay token
     gcal_synced = False
+    gcal_error = ""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
         gcal_id = generate_task_gcal_id(tarea.fecha, tarea.bloque_id)
+        print(f"GCAL SYNC: id={gcal_id}, start_iso={tarea.start_iso}, end_iso={tarea.end_iso}")
 
-        # Usar horas enviadas por el frontend (fuente de verdad)
-        start_hour = tarea.hora_inicio or "08:00"
-        end_hour = tarea.hora_fin or "09:00"
+        if tarea.start_iso and tarea.end_iso:
+            gcal_payload = {
+                "summary": f"📘 {tarea.descripcion[:80]}",
+                "description": tarea.descripcion,
+                "start": {"dateTime": tarea.start_iso, "timeZone": "America/Guayaquil"},
+                "end": {"dateTime": tarea.end_iso, "timeZone": "America/Guayaquil"},
+            }
+            try:
+                result = upsert_event(gcal_headers, gcal_id, gcal_payload)
+                gcal_synced = result in ("created", "updated")
+                if not gcal_synced:
+                    gcal_error = f"upsert returned: {result}"
+            except Exception as e:
+                gcal_error = str(e)
+                print(f"ERROR GOOGLE CALENDAR: {gcal_error}")
+        else:
+            gcal_error = "No start_iso/end_iso provided"
+            print(f"GCAL SKIP: {gcal_error}")
 
-        gcal_payload = {
-            "summary": f"📘 {tarea.descripcion[:80]}",
-            "description": tarea.descripcion,
-            "start": {"dateTime": f"{tarea.fecha}T{start_hour}:00", "timeZone": "America/Guayaquil"},
-            "end": {"dateTime": f"{tarea.fecha}T{end_hour}:00", "timeZone": "America/Guayaquil"},
-        }
-        try:
-            result = upsert_event(gcal_headers, gcal_id, gcal_payload)
-            gcal_synced = result in ("created", "updated")
-        except Exception:
-            pass
-
-    return {"status": "success", "gcal_synced": gcal_synced}
+    return {"status": "success", "gcal_synced": gcal_synced, "gcal_error": gcal_error}
 
 # 2b. Borrar tarea: físico para manuales, lógico para estáticos + Google Calendar
 @app.delete("/api/tareas/{fecha}/{bloque_id}")
