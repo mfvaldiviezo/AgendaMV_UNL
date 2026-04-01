@@ -381,7 +381,8 @@ def verificar_colision(nuevo_evento: dict, horario_docente: dict) -> bool:
 
 class PlanIA(BaseModel):
     prompt_usuario: str
-    fecha_inicio_semana: str  # YYYY-MM-DD (lunes)
+    fecha_desde: str  # YYYY-MM-DD
+    fecha_hasta: str  # YYYY-MM-DD 
     token_google: str = ""
 
 @app.post("/api/planificar-semana-ia")
@@ -389,32 +390,36 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
     if not client:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
 
-    # Calcular horas libres Lun-Vie (07:00-12:00 siempre libre, 12:00-13:00 almuerzo)
-    fecha_lunes = datetime.strptime(plan.fecha_inicio_semana, "%Y-%m-%d")
+    # Calcular horas libres Lun-Vie entre fecha_desde y fecha_hasta (07:00-12:00 siempre libre, 12:00-13:00 almuerzo)
+    fecha_inicio = datetime.strptime(plan.fecha_desde, "%Y-%m-%d")
+    fecha_fin = datetime.strptime(plan.fecha_hasta, "%Y-%m-%d")
     horas_libres = []
-    for day_offset in range(5):  # Lun a Vie
-        d = fecha_lunes + timedelta(days=day_offset)
-        ds = d.strftime("%Y-%m-%d")
-        dia_nombre = DAY_NAMES[d.weekday()]
-        occupied = set(SCHEDULE_DATA.get(d.weekday(), {}).keys())
-        # Bloques de mañana (07:00-12:00) siempre libres
-        for h in range(7, 12):
-            hora = f"{h:02d}:00"
-            horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
-        # Bloques de tarde/noche (21:00-23:00) — siempre libre
-        for h in range(21, 23):
-            hora = f"{h:02d}:00"
-            horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
+    
+    current_date = fecha_inicio
+    while current_date <= fecha_fin:
+        if current_date.weekday() < 5:  # Lunes a Viernes
+            ds = current_date.strftime("%Y-%m-%d")
+            dia_nombre = DAY_NAMES[current_date.weekday()]
+            occupied = set(SCHEDULE_DATA.get(current_date.weekday(), {}).keys())
+            # Bloques de mañana (07:00-12:00) siempre libres
+            for h in range(7, 12):
+                hora = f"{h:02d}:00"
+                horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
+            # Bloques de tarde/noche (21:00-23:00) — siempre libre
+            for h in range(21, 23):
+                hora = f"{h:02d}:00"
+                horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
+        current_date += timedelta(days=1)
 
     # Prompt estricto para OpenRouter con colores dinámicos
-    system_prompt = f"""Eres un estratega doctoral. El usuario quiere metas múltiples (por ejemplo: 1) Planificar el capítulo 3 de su libro y 2) Probar algoritmos de clasificación). Divide estas tareas con títulos específicos y creativos. Asegúrate de que los bloques de cada meta tengan un color distinto para distinguirlos visualmente. Asigna un color hexadecimal diferente a cada bloque dependiendo de la meta a la que pertenezca. Por ejemplo: Escritura de capítulo (#2563eb) y Algoritmos de clasificación (#16a34a). El JSON de respuesta debe incluir el campo 'color'. Distribuye estas sub-tareas estratégicamente en los espacios libres proporcionados. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos: {{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen de la acción', 'descripcion': 'La idea detallada', 'color': '#hex' }}. No uses markdown."""
+    system_prompt = f"""Eres un estratega doctoral. El usuario indicará múltiples metas (ej. 1) Escritura Capítulo 3, 2) Pruebas Algoritmos). Divide estas tareas con títulos específicos y creativos. Para cada tarea generada, incluye un campo `meta_id` (1, 2, etc.) y un `color` hexadecimal único por meta. Distribuye equilibradamente las tareas en los huecos libres. Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: [{{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen', 'descripcion': 'Detalle', 'meta_id': 1, 'color': '#hex' }}]. No uses markdown."""
 
     try:
         response = client.chat.completions.create(
             model="openrouter/auto",
             max_tokens=2000,
             messages=[
-                {"role": "system", "content": "Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: dia(YYYY-MM-DD), hora_inicio(HH:MM), hora_fin(HH:MM), titulo, descripcion, color. No uses backticks de markdown."},
+                {"role": "system", "content": "Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: dia(YYYY-MM-DD), hora_inicio(HH:MM), hora_fin(HH:MM), titulo, descripcion, meta_id, color. No uses backticks de markdown."},
                 {"role": "user", "content": f"Metas: {plan.prompt_usuario}\nHoras libres: {json.dumps(horas_libres, ensure_ascii=False)}"}
             ]
         )
@@ -441,8 +446,11 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
         except Exception as e:
             print(f"Error al limpiar pizarra previa: {e}")
 
-    # Guardar en Supabase + Google Calendar
+    # Guardar en Supabase + Google Calendar (Sincronización Total)
     auth_header = request.headers.get("Authorization", "")
+    if plan.token_google:
+        auth_header = f"Bearer {plan.token_google}" if not plan.token_google.startswith("Bearer ") else plan.token_google
+        
     gcal_headers = None
     if auth_header.startswith("Bearer "):
         gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
@@ -475,9 +483,12 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
             end_iso = f"{t['dia']}T{t['hora_fin']}:00"
             gcal_payload = {
                 "summary": f"🤖 {t['titulo']}",
-                "description": t["descripcion"],
+                "description": f"Meta {t.get('meta_id', '1')}\n{t['descripcion']}",
                 "start": {"dateTime": start_iso, "timeZone": "America/Guayaquil"},
                 "end": {"dateTime": end_iso, "timeZone": "America/Guayaquil"},
+                "extendedProperties": {
+                    "private": {"origenApp": "agendaDoctoral", "bloqueId": bloque_id}
+                }
             }
             try:
                 upsert_event(gcal_headers, gcal_id, gcal_payload)

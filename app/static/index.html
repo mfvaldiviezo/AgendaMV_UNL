@@ -1166,6 +1166,19 @@
         }
 
         document.getElementById('btn-ia-plan').onclick = () => {
+            let st = calendar ? calendar.view.activeStart : new Date();
+            let en = calendar ? new Date(calendar.view.activeEnd.getTime() - 86400000) : new Date(st.getTime() + 6 * 86400000);
+
+            let labelSpan = document.getElementById('ia-date-label');
+            if (!labelSpan) {
+                labelSpan = document.createElement('p');
+                labelSpan.id = 'ia-date-label';
+                labelSpan.style.cssText = 'font-size: 0.82rem; color: #475569; margin-bottom: 15px; font-weight: 600; background: #f1f5f9; padding: 10px; border-radius: 8px; text-align: center;';
+                const formSec = document.getElementById('ia-form-section');
+                formSec.insertBefore(labelSpan, formSec.firstChild);
+            }
+            labelSpan.innerHTML = `📅 Planificando para la semana del <b>${fmtDate(st)}</b> al <b>${fmtDate(en)}</b>`;
+
             document.getElementById('ia-prompt').value = '';
             document.getElementById('ia-form-section').style.display = '';
             document.getElementById('ia-loading').classList.remove('active');
@@ -1187,13 +1200,9 @@
             const prompt = document.getElementById('ia-prompt').value.trim();
             if (!prompt) { alert('Describe al menos una meta para tu semana.'); return; }
 
-            // Calcular el lunes de la semana que se está viendo activamente en el calendario
-            let fechaLunes;
-            if (calendar) {
-                fechaLunes = getMonday(calendar.view.activeStart);
-            } else {
-                fechaLunes = getMonday(new Date());
-            }
+            // Calcular fechas desde la vista del calendario
+            let st = calendar ? calendar.view.activeStart : new Date();
+            let en = calendar ? new Date(calendar.view.activeEnd.getTime() - 86400000) : new Date(st.getTime() + 6 * 86400000);
 
             // Mostrar loading
             document.getElementById('ia-form-section').style.display = 'none';
@@ -1207,7 +1216,8 @@
                     method: 'POST', headers,
                     body: JSON.stringify({
                         prompt_usuario: prompt,
-                        fecha_inicio_semana: fechaLunes,
+                        fecha_desde: fmtDate(st),
+                        fecha_hasta: fmtDate(en),
                         token_google: accessToken || ''
                     })
                 });
