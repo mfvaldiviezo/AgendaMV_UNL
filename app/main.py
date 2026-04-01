@@ -130,40 +130,57 @@ def guardar_tarea(tarea: Tarea):
         supabase.table("tareas").insert([tarea.dict()]).execute()
     return {"status": "success"}
 
-# 2b. Borrar tarea de Supabase (y opcionalmente de Google Calendar)
+# 2b. Borrar tarea: físico para manuales/investigación, lógico para distributivo
 @app.delete("/api/tareas/{fecha}/{bloque_id}")
 def borrar_tarea(fecha: str, bloque_id: str, request: Request):
-    # Primero, buscar el registro para obtener posible google_event_id
-    registro = supabase.table("tareas").select("*").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
-    google_event_id = None
-    if registro.data and len(registro.data) > 0:
-        google_event_id = registro.data[0].get("google_event_id")
-
-    # Borrar de Supabase
-    resultado = supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
-
-    # Si hay token de Google, intentar borrar el evento de Calendar
     auth_header = request.headers.get("Authorization", "")
+    gcal_headers = None
     if auth_header.startswith("Bearer "):
-        headers = {"Authorization": auth_header, "Content-Type": "application/json"}
-        try:
-            # 1. Si tiene google_event_id guardado, borrar directamente
-            if google_event_id:
-                requests.delete(f"{GCAL_BASE}/{google_event_id}", headers=headers)
-            # 2. Para bloques de trabajo, derivar el event_id determinista
-            elif bloque_id.startswith("work_"):
-                parts = bloque_id.split("_")  # work_1_1300
+        gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+
+    deleted_count = 0
+
+    if bloque_id.startswith("work_"):
+        # LÓGICO: clase del distributivo → guardar excepción (no borrar, es estática)
+        existe = supabase.table("excepciones").select("id").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+        if not existe.data:
+            supabase.table("excepciones").insert([{"fecha": fecha, "bloque_id": bloque_id}]).execute()
+        # También borrar cualquier tarea asociada para ese bloque
+        supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+        # Intentar borrar de Google Calendar
+        if gcal_headers:
+            try:
+                parts = bloque_id.split("_")
                 if len(parts) == 3:
                     day_idx = int(parts[1]) - 1
                     hora = parts[2][:2] + ":" + parts[2][2:]
                     for sem in ["2026a", "2026b"]:
                         event_id = generate_event_id(day_idx, hora, sem)
-                        requests.delete(f"{GCAL_BASE}/{event_id}", headers=headers)
-        except Exception:
-            pass  # No fallar si Google Calendar no responde
+                        requests.delete(f"{GCAL_BASE}/{event_id}", headers=gcal_headers)
+            except Exception:
+                pass
+        deleted_count = 1
+    else:
+        # FÍSICO: investigación o custom → borrar registro de Supabase
+        registro = supabase.table("tareas").select("*").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+        google_event_id = None
+        if registro.data and len(registro.data) > 0:
+            google_event_id = registro.data[0].get("google_event_id")
+        resultado = supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
+        deleted_count = len(resultado.data) if resultado.data else 0
+        if gcal_headers and google_event_id:
+            try:
+                requests.delete(f"{GCAL_BASE}/{google_event_id}", headers=gcal_headers)
+            except Exception:
+                pass
 
-    deleted_count = len(resultado.data) if resultado.data else 0
     return {"status": "success", "deleted": deleted_count}
+
+# 2c. Obtener excepciones de una fecha (clases borradas lógicamente)
+@app.get("/api/excepciones/{fecha}")
+def obtener_excepciones(fecha: str):
+    res = supabase.table("excepciones").select("bloque_id").eq("fecha", fecha).execute()
+    return {"data": [r["bloque_id"] for r in res.data]}
 
 @app.post("/api/sincronizar-semestre")
 def sincronizar_semestre(req: SyncCiclo):

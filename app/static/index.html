@@ -585,6 +585,11 @@
         function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') }
         function workBloqueId(jsDay, hour) { return 'work_' + jsDay + '_' + hour.replace(':', '') }
 
+        // Periodo académico: las clases del distributivo SOLO se renderizan dentro de este rango
+        const SEMESTER_START = '2026-04-06';
+        const SEMESTER_END = '2026-07-31';
+        function isInSemester(dateStr) { return dateStr >= SEMESTER_START && dateStr <= SEMESTER_END; }
+
         // ==========================================
         // MODAL
         // ==========================================
@@ -681,12 +686,16 @@
                     const jsDay = new Date(ds + 'T12:00:00').getDay();
                     const isWeekend = (jsDay === 0 || jsDay === 6);
                     let tareas = [];
+                    let excepciones = [];
                     try { const r = await fetch('/api/tareas/' + ds); const j = await r.json(); tareas = j.data || [] } catch (e) { }
+                    try { const r = await fetch('/api/excepciones/' + ds); const j = await r.json(); excepciones = j.data || [] } catch (e) { }
 
-                    // 1) Distributivo docente (Mon-Fri)
-                    if (!isWeekend && SCHEDULE[jsDay]) {
+                    // 1) Distributivo docente (Mon-Fri, SOLO dentro del semestre)
+                    if (!isWeekend && SCHEDULE[jsDay] && isInSemester(ds)) {
                         for (const [hr, act] of Object.entries(SCHEDULE[jsDay])) {
                             const bId = workBloqueId(jsDay, hr);
+                            // Saltar si hay una excepción registrada para este bloque
+                            if (excepciones.includes(bId)) continue;
                             const saved = tareas.find(t => t.bloque_id === bId);
                             const c = getColor(act, 'distributivo');
                             const eh = String(parseInt(hr) + 1).padStart(2, '0') + ':00';
@@ -843,7 +852,6 @@
                 locale: 'es',
                 initialView: 'timeGridWeek',
                 initialDate: '2026-04-06',
-                validRange: { start: '2026-04-06', end: '2026-08-01' },
                 headerToolbar: { left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' },
                 slotMinTime: '07:00:00', slotMaxTime: '23:30:00', scrollTime: '07:00:00',
                 height: 700, nowIndicator: true, allDaySlot: true, allDayText: 'Día',
