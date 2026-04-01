@@ -630,6 +630,56 @@
         .fc .fc-day-sun {
             background: rgba(241, 245, 249, .5) !important
         }
+
+        /* Daily Briefing Button */
+        .btn-briefing {
+            background: linear-gradient(135deg, #1e1b4b, #4338ca);
+            color: #fff;
+            font-weight: 700;
+            font-size: .85rem;
+            padding: 10px 20px;
+            border-radius: 40px;
+            border: none;
+            cursor: pointer;
+            transition: all .2s;
+            box-shadow: 0 2px 12px rgba(67, 56, 202, .35)
+        }
+
+        .btn-briefing:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 18px rgba(67, 56, 202, .5)
+        }
+
+        /* Briefing spinner */
+        .briefing-spinner {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #4338ca;
+            border-radius: 50%;
+            animation: spin 1s linear infinite
+        }
+
+        /* Briefing content markdown formatting */
+        #briefing-body h2 {
+            font-size: .95rem;
+            font-weight: 700;
+            margin: 10px 0 6px;
+            color: #1e1b4b
+        }
+
+        #briefing-body ul {
+            padding-left: 18px
+        }
+
+        #briefing-body li {
+            margin-bottom: 5px
+        }
+
+        #briefing-body p {
+            margin-bottom: 6px
+        }
     </style>
 </head>
 
@@ -646,6 +696,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
                 <button id="btn-ia-plan" class="btn-ia">✨ Planificar Semana con IA</button>
+                <button id="btn-briefing" class="btn-briefing">🌅 Resumen del Día</button>
                 <button id="btn-sync-semester" class="btn-primary">⚡ Sincronizar Semestre</button>
                 <div id="auth-status" class="status-badge">⏳ Esperando conexión...</div>
             </div>
@@ -711,6 +762,28 @@
                 <button class="btn-danger" id="modal-btn-delete">🗑️ Borrar</button>
                 <button class="btn-outline" id="modal-btn-cancel">Cancelar</button>
                 <button class="btn-primary" id="modal-btn-save">💾 Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Daily Briefing -->
+    <div class="modal-overlay" id="briefing-overlay">
+        <div class="modal" style="max-width:600px">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1e1b4b, #4338ca)">
+                <h3>🌅 Daily Briefing — Coach Doctoral</h3>
+                <p id="briefing-date-subtitle">Cargando agenda de hoy...</p>
+            </div>
+            <div class="modal-body" id="briefing-body"
+                style="min-height:120px;font-size:.88rem;line-height:1.7;color:#1e293b">
+                <div style="text-align:center;padding:30px 0">
+                    <div class="briefing-spinner"></div>
+                    <p style="margin-top:12px;color:#7c3aed;font-weight:600">🧠 Tu coach está analizando la agenda...
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="briefing-refresh">🔄 Regenerar</button>
+                <button class="btn-outline" id="briefing-close">Cerrar</button>
             </div>
         </div>
     </div>
@@ -1239,6 +1312,57 @@
                 showToast('❌ Error de conexión', 'error');
                 console.error(e);
             }
+        };
+
+        // === RESUMEN DIARIO (DAILY BRIEFING) ===
+        async function loadDailyBriefing() {
+            const body = document.getElementById('briefing-body');
+            const overlay = document.getElementById('briefing-overlay');
+            const subtitle = document.getElementById('briefing-date-subtitle');
+
+            overlay.classList.add('active');
+            body.innerHTML = '<div style="text-align:center;padding:30px 0"><div class="briefing-spinner"></div><p style="margin-top:12px;color:#7c3aed;font-weight:600">🧠 Tu coach está analizando la agenda...</p></div>';
+            document.getElementById('briefing-refresh').disabled = true;
+
+            try {
+                // El backend calcula la hora Ecuador correcta (UTC-5) nativamente
+                const r = await fetch('/api/resumen-diario');
+                const data = await r.json();
+
+                if (r.ok) {
+                    subtitle.innerText = `Hoy: ${data.fecha_hoy} | Mañana: ${data.fecha_manana}`;
+
+                    // Parseo simple de Markdown (H2, Bold, Italic, Bullets)
+                    let html = data.resumen
+                        .replace(/^##\s*(.*?)$/gm, '<h2>$1</h2>')
+                        .replace(/\*\*(.*?)\*\*/gg, '<b>$1</b>')
+                        .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                        .replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>');
+
+                    // Agrupar los <li> generados en <ul>
+                    html = html.replace(/(<li>.*?<\/li>(\n|.)*?)+(?!<li>)/g, match => `<ul>${match}</ul>`);
+                    // Saltos de línea restantes
+                    html = html.replace(/\n(?![<])/g, '<br>');
+
+                    body.innerHTML = html;
+                } else {
+                    body.innerHTML = `<div style="color:#e11d48;padding:20px 0;text-align:center">❌ Error: ${data.detail || 'Desconocido'}</div>`;
+                }
+            } catch (e) {
+                body.innerHTML = `<div style="color:#e11d48;padding:20px 0;text-align:center">❌ Error de conexión al servidor</div>`;
+                console.error(e);
+            } finally {
+                document.getElementById('briefing-refresh').disabled = false;
+            }
+        }
+
+        document.getElementById('btn-briefing').onclick = loadDailyBriefing;
+        document.getElementById('briefing-refresh').onclick = loadDailyBriefing;
+
+        const closeBriefing = () => document.getElementById('briefing-overlay').classList.remove('active');
+        document.getElementById('briefing-close').onclick = closeBriefing;
+        document.getElementById('briefing-overlay').onclick = (e) => {
+            if (e.target === document.getElementById('briefing-overlay')) closeBriefing();
         };
 
         iniciarApp();
