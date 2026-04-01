@@ -1296,13 +1296,18 @@
         // ==========================================
         // COMMAND CENTER (RESUMEN SEMANAL PERSISTENTE)
         // ==========================================
-        function obtenerSemanaID(date) {
-            const d = new Date(date);
-            d.setHours(0, 0, 0, 0);
-            d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
-            const week1 = new Date(d.getFullYear(), 0, 4);
-            const week = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-            return `${d.getFullYear()}-W${week.toString().padStart(2, '0')}`;
+        function getWeekID(date) {
+            const target = new Date(date);
+            const dayNr = (date.getDay() + 6) % 7;
+            target.setDate(target.getDate() - dayNr + 3);
+            const firstThursday = target.valueOf();
+            target.setMonth(0, 1);
+            if (target.getDay() !== 4) {
+                target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+            }
+            const weekID = 1 + Math.ceil((firstThursday - target) / 604800000);
+            const year = new Date(firstThursday).getFullYear();
+            return `${year}-W${weekID.toString().padStart(2, '0')}`;
         }
 
         async function cargarResumenGuardado(forceGenerate = false) {
@@ -1312,7 +1317,7 @@
 
             // Usar currentStart en lugar de activeStart para alinear estrictamente a la semana vista
             const st = calendar.view.currentStart;
-            const semanaIso = obtenerSemanaID(st);
+            const semanaIso = getWeekID(st);
             const en = new Date(calendar.view.activeEnd.getTime() - 86400000);
 
             if (forceGenerate) {
