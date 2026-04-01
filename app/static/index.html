@@ -937,7 +937,9 @@
                     tareas.filter(t => t.bloque_id.startsWith('custom_') || t.bloque_id.startsWith('ia_')).forEach(t => {
                         let bg = '#4f46e5', border = '#4338ca'; // Defecto: doctorado
                         if (t.bloque_id.startsWith('ia_')) {
-                            bg = '#8b5cf6'; border = '#7c3aed'; // Violeta para IA
+                            const colorMatch = t.descripcion.match(/COLOR:(#[0-9A-Fa-f]{6})/i);
+                            bg = colorMatch ? colorMatch[1] : '#8b5cf6'; // Color asignado por la IA o violeta default
+                            border = bg;
                         }
                         // Extraer horas del texto: "Cat [HH:MM — HH:MM]\nDetalle" (para custom) o usar 🤖 para IA
                         const timeMatch = t.descripcion.match(/\[(\d{2}:\d{2})\s*—\s*(\d{2}:\d{2})\]/);
@@ -968,7 +970,24 @@
                             const r = await fetch('/api/calendario/eventos/' + ds, { headers: { 'Authorization': 'Bearer ' + accessToken } });
                             if (!r.ok) return;
                             const j = await r.json();
-                            (j.data || []).forEach(ev => {
+                            const gcalData = j.data || [];
+
+                            // SYNC ELIMINACIÓN (Google -> App): Si un evento IA está en el render (all) pero ya no en Google Calendar, bórralo.
+                            const gcalOriginAgenda = gcalData.filter(ev => ev.origen_app === 'agendaDoctoral');
+                            for (let i = all.length - 1; i >= 0; i--) {
+                                const ev = all[i];
+                                if (ev.extendedProps && ev.extendedProps.source === 'custom' && ev.extendedProps.bloqueId.startsWith('ia_') && ev.extendedProps.fecha === ds) {
+                                    const expectedTime = ev.start.split('T')[1].substring(0, 5);
+                                    const existsInGcal = gcalOriginAgenda.some(ge => ge.hora_inicio === expectedTime);
+                                    if (!existsInGcal) {
+                                        console.log('SYNC DELETION: Tarea eliminada en Google Calendar, borrando de DB local...', ev.extendedProps.bloqueId);
+                                        fetch('/api/tareas/' + ds + '/' + ev.extendedProps.bloqueId, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + accessToken } });
+                                        all.splice(i, 1); // Quitar del UI
+                                    }
+                                }
+                            }
+
+                            gcalData.forEach(ev => {
                                 if (ev.origen_app === 'agendaDoctoral') return;
 
                                 const isAll = !ev.hora_inicio.includes(':');
@@ -1168,10 +1187,10 @@
             const prompt = document.getElementById('ia-prompt').value.trim();
             if (!prompt) { alert('Describe al menos una meta para tu semana.'); return; }
 
-            // Calcular el lunes de la semana que se está viendo en el calendario
+            // Calcular el lunes de la semana que se está viendo activamente en el calendario
             let fechaLunes;
             if (calendar) {
-                fechaLunes = getMonday(calendar.getDate());
+                fechaLunes = getMonday(calendar.view.activeStart);
             } else {
                 fechaLunes = getMonday(new Date());
             }

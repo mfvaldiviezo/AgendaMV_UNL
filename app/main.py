@@ -406,16 +406,15 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
             hora = f"{h:02d}:00"
             horas_libres.append({"dia": ds, "dia_nombre": dia_nombre, "hora_inicio": hora, "hora_fin": f"{h+1:02d}:00"})
 
-    # Prompt estricto para Gemini
-    # Prompt estricto para OpenRouter
-    system_prompt = f"""Eres un Asistente Académico de Nivel Doctorado. El usuario te dará metas generales. Tu trabajo es DESGLOSAR esas metas en ideas específicas, pasos de acción y sub-tareas creativas. Si debe escribir un libro, propón estructurar capítulos específicos. Si es investigación científica o programación, sugiere qué revisar o qué código diseñar. Distribuye estas sub-tareas estratégicamente en los espacios libres proporcionados. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos: {{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen de la acción', 'descripcion': 'La idea detallada de lo que debe trabajar en ese bloque' }}. No uses markdown."""
+    # Prompt estricto para OpenRouter con colores dinámicos
+    system_prompt = f"""Eres un estratega doctoral. El usuario quiere metas múltiples (por ejemplo: 1) Planificar el capítulo 3 de su libro y 2) Probar algoritmos de clasificación). Divide estas tareas con títulos específicos y creativos. Asegúrate de que los bloques de cada meta tengan un color distinto para distinguirlos visualmente. Asigna un color hexadecimal diferente a cada bloque dependiendo de la meta a la que pertenezca. Por ejemplo: Escritura de capítulo (#2563eb) y Algoritmos de clasificación (#16a34a). El JSON de respuesta debe incluir el campo 'color'. Distribuye estas sub-tareas estratégicamente en los espacios libres proporcionados. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos: {{ 'dia': 'YYYY-MM-DD', 'hora_inicio': 'HH:MM', 'hora_fin': 'HH:MM', 'titulo': 'Resumen de la acción', 'descripcion': 'La idea detallada', 'color': '#hex' }}. No uses markdown."""
 
     try:
         response = client.chat.completions.create(
             model="openrouter/auto",
             max_tokens=2000,
             messages=[
-                {"role": "system", "content": "Eres un asistente de productividad. Devuelve ÚNICAMENTE un JSON válido con un arreglo de objetos que contengan: dia (YYYY-MM-DD), hora_inicio (HH:MM), hora_fin (HH:MM), titulo, descripcion. No uses backticks de markdown."},
+                {"role": "system", "content": "Devuelve ÚNICAMENTE un JSON válido con arreglo de objetos: dia(YYYY-MM-DD), hora_inicio(HH:MM), hora_fin(HH:MM), titulo, descripcion, color. No uses backticks de markdown."},
                 {"role": "user", "content": f"Metas: {plan.prompt_usuario}\nHoras libres: {json.dumps(horas_libres, ensure_ascii=False)}"}
             ]
         )
@@ -459,7 +458,7 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
         db_data = {
             "fecha": t["dia"],
             "bloque_id": bloque_id,
-            "descripcion": f"🤖 {t['titulo']} [{t['hora_inicio']} — {t['hora_fin']}]\n{t['descripcion']}"
+            "descripcion": f"🤖 {t['titulo']} [{t['hora_inicio']} — {t['hora_fin']}] | COLOR:{t.get('color', '#8b5cf6')}\n{t['descripcion']}"
         }
         # Upsert en Supabase (ahora casi siempre será Insert por la limpieza, pero mantenemos Upsert por seguridad)
         existe = supabase.table("tareas").select("id").eq("fecha", t["dia"]).eq("bloque_id", bloque_id).execute()
