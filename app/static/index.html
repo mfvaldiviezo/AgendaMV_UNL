@@ -391,6 +391,37 @@
             background: rgba(79, 70, 229, .15) !important
         }
 
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            padding: 12px 24px;
+            border-radius: 14px;
+            font-size: .82rem;
+            font-weight: 600;
+            color: #fff;
+            z-index: 10000;
+            opacity: 0;
+            transition: all .3s ease;
+            pointer-events: none;
+            font-family: 'Inter', system-ui, sans-serif;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .2)
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0)
+        }
+
+        .toast-success {
+            background: linear-gradient(135deg, #059669, #10b981)
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #dc2626, #ef4444)
+        }
+
         /* FullCalendar overrides */
         .fc {
             font-family: 'Inter', system-ui, sans-serif !important
@@ -628,7 +659,21 @@
             if (calendar) calendar.unselect();
         }
 
-        // Guardar (edit o create)
+        // Toast de notificación
+        function showToast(msg, type = 'success') {
+            let t = document.getElementById('app-toast');
+            if (!t) {
+                t = document.createElement('div');
+                t.id = 'app-toast';
+                t.className = 'toast';
+                document.body.appendChild(t);
+            }
+            t.textContent = msg;
+            t.className = 'toast toast-' + type + ' show';
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // Guardar (edit o create) + Google Calendar sync
         document.getElementById('modal-btn-save').onclick = async () => {
             const desc = document.getElementById('modal-textarea').value.trim();
             if (!desc) { alert('El detalle no puede estar vacío.'); return }
@@ -636,7 +681,6 @@
             let bloqueId = modalState.bloqueId;
             let fullDesc = desc;
 
-            // Si es creación, prepend la categoría y guardar horas en la descripción
             if (modalState.mode === 'create') {
                 const cat = document.getElementById('modal-category').value;
                 const timeLabel = document.getElementById('modal-time-label').textContent;
@@ -644,28 +688,50 @@
             }
 
             try {
-                await fetch('/api/tareas', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                const headers = { 'Content-Type': 'application/json' };
+                if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+                const r = await fetch('/api/tareas', {
+                    method: 'POST', headers,
                     body: JSON.stringify({ fecha: modalState.fecha, bloque_id: bloqueId, descripcion: fullDesc })
                 });
+                const data = await r.json();
                 closeModal();
                 if (calendar) calendar.refetchEvents();
-            } catch (e) { alert('Error al guardar.'); console.error(e) }
+                if (data.gcal_synced) {
+                    showToast('✅ Guardado en Supabase y Google Calendar');
+                } else if (accessToken) {
+                    showToast('💾 Guardado en Supabase (Calendar no sincronizado)', 'error');
+                } else {
+                    showToast('💾 Guardado en Supabase');
+                }
+            } catch (e) {
+                showToast('❌ Error al guardar', 'error');
+                console.error(e);
+            }
         };
 
-        // Borrar
+        // Borrar + Google Calendar sync
         document.getElementById('modal-btn-delete').onclick = async () => {
             if (!confirm('⚠️ ¿Estás seguro de borrar esta actividad?\n\nSe eliminará de Supabase' +
-                (accessToken ? ' y se intentará borrar de Google Calendar.' : '.'))) return;
+                (accessToken ? ' y de Google Calendar.' : '.'))) return;
             try {
                 const headers = { 'Content-Type': 'application/json' };
                 if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
-                await fetch('/api/tareas/' + modalState.fecha + '/' + encodeURIComponent(modalState.bloqueId), {
+                const r = await fetch('/api/tareas/' + modalState.fecha + '/' + encodeURIComponent(modalState.bloqueId), {
                     method: 'DELETE', headers
                 });
+                const data = await r.json();
                 closeModal();
                 if (calendar) calendar.refetchEvents();
-            } catch (e) { alert('Error al borrar.'); console.error(e) }
+                if (data.gcal_deleted) {
+                    showToast('🗑️ Eliminado de Supabase y Google Calendar');
+                } else {
+                    showToast('🗑️ Eliminado de Supabase');
+                }
+            } catch (e) {
+                showToast('❌ Error al borrar', 'error');
+                console.error(e);
+            }
         };
 
         // Cancelar / overlay click

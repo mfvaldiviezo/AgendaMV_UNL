@@ -110,6 +110,18 @@ def find_first_weekday(start_date: datetime, target_weekday: int) -> datetime:
     return start_date + timedelta(days=days_ahead)
 
 
+def generate_task_gcal_id(fecha: str, bloque_id: str) -> str:
+    """
+    Genera un ID determinista para eventos individuales (tareas) en Google Calendar.
+    Usa fecha + bloque_id como semilla → base32hex (a-v, 0-9).
+    """
+    fecha_limpia = re.sub(r"[^0-9]", "", fecha)
+    bloque_limpio = re.sub(r"[^a-z0-9]", "", bloque_id.lower())
+    seed = f"tarea{fecha_limpia}{bloque_limpio}"
+    encoded = base64.b32hexencode(seed.encode()).decode().lower().rstrip("=")
+    return encoded
+
+
 # =============================================
 # ENDPOINTS
 # =============================================
@@ -121,17 +133,57 @@ def obtener_tareas(fecha: str):
     exc = supabase.table("excepciones").select("bloque_id").eq("fecha", fecha).execute()
     return {"data": res.data, "excepciones": [r["bloque_id"] for r in exc.data]}
 
-# 2. Guardar o actualizar tarea en Supabase
+# 2. Guardar o actualizar tarea en Supabase + Google Calendar
 @app.post("/api/tareas")
-def guardar_tarea(tarea: Tarea):
+def guardar_tarea(tarea: Tarea, request: Request):
+    # Supabase: upsert
     existe = supabase.table("tareas").select("id").eq("fecha", tarea.fecha).eq("bloque_id", tarea.bloque_id).execute()
     if len(existe.data) > 0:
         supabase.table("tareas").update({"descripcion": tarea.descripcion}).eq("id", existe.data[0]["id"]).execute()
     else:
         supabase.table("tareas").insert([tarea.dict()]).execute()
-    return {"status": "success"}
 
-# 2b. Borrar tarea: físico para manuales/investigación, lógico para distributivo
+    # Google Calendar: sync si hay token
+    gcal_synced = False
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        gcal_headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+        gcal_id = generate_task_gcal_id(tarea.fecha, tarea.bloque_id)
+        # Parsear horario del bloque_id para el evento
+        start_hour, end_hour = "08:00", "09:00"
+        if tarea.bloque_id.startswith("work_"):
+            parts = tarea.bloque_id.split("_")
+            if len(parts) == 3:
+                h = parts[2][:2] + ":" + parts[2][2:]
+                start_hour = h
+                end_hour = str(int(parts[2][:2]) + 1).zfill(2) + ":" + parts[2][2:]
+        elif tarea.bloque_id.startswith("custom_"):
+            # Extraer horas de la descripción: "Cat [HH:MM — HH:MM]\nDetalle"
+            import re as _re
+            m = _re.search(r"\[(\d{2}:\d{2})\s*[—-]\s*(\d{2}:\d{2})\]", tarea.descripcion)
+            if m:
+                start_hour, end_hour = m.group(1), m.group(2)
+        elif tarea.bloque_id.startswith("research_"):
+            blocks = {"research_1": ("07:30", "09:00"), "research_2": ("09:00", "10:30"),
+                      "research_3": ("10:30", "11:30"), "research_4": ("22:20", "23:20")}
+            if tarea.bloque_id in blocks:
+                start_hour, end_hour = blocks[tarea.bloque_id]
+
+        gcal_payload = {
+            "summary": f"📘 {tarea.descripcion[:80]}",
+            "description": tarea.descripcion,
+            "start": {"dateTime": f"{tarea.fecha}T{start_hour}:00", "timeZone": "America/Guayaquil"},
+            "end": {"dateTime": f"{tarea.fecha}T{end_hour}:00", "timeZone": "America/Guayaquil"},
+        }
+        try:
+            result = upsert_event(gcal_headers, gcal_id, gcal_payload)
+            gcal_synced = result in ("created", "updated")
+        except Exception:
+            pass
+
+    return {"status": "success", "gcal_synced": gcal_synced}
+
+# 2b. Borrar tarea: físico para manuales, lógico para estáticos + Google Calendar
 @app.delete("/api/tareas/{fecha}/{bloque_id}")
 def borrar_tarea(fecha: str, bloque_id: str, request: Request):
     auth_header = request.headers.get("Authorization", "")
@@ -142,40 +194,28 @@ def borrar_tarea(fecha: str, bloque_id: str, request: Request):
     deleted_count = 0
 
     if bloque_id.startswith("work_") or bloque_id.startswith("research_"):
-        # LÓGICO: bloque estático (distributivo o investigación) → guardar excepción
+        # LÓGICO: bloque estático → guardar excepción
         existe = supabase.table("excepciones").select("id").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
         if not existe.data:
             supabase.table("excepciones").insert([{"fecha": fecha, "bloque_id": bloque_id}]).execute()
-        # También borrar cualquier tarea asociada para ese bloque
         supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
-        # Intentar borrar de Google Calendar (solo work_)
-        if gcal_headers and bloque_id.startswith("work_"):
-            try:
-                parts = bloque_id.split("_")
-                if len(parts) == 3:
-                    day_idx = int(parts[1]) - 1
-                    hora = parts[2][:2] + ":" + parts[2][2:]
-                    for sem in ["2026a", "2026b"]:
-                        event_id = generate_event_id(day_idx, hora, sem)
-                        requests.delete(f"{GCAL_BASE}/{event_id}", headers=gcal_headers)
-            except Exception:
-                pass
         deleted_count = 1
     else:
-        # FÍSICO: investigación o custom → borrar registro de Supabase
-        registro = supabase.table("tareas").select("*").eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
-        google_event_id = None
-        if registro.data and len(registro.data) > 0:
-            google_event_id = registro.data[0].get("google_event_id")
+        # FÍSICO: custom → borrar registro de Supabase
         resultado = supabase.table("tareas").delete().eq("fecha", fecha).eq("bloque_id", bloque_id).execute()
         deleted_count = len(resultado.data) if resultado.data else 0
-        if gcal_headers and google_event_id:
-            try:
-                requests.delete(f"{GCAL_BASE}/{google_event_id}", headers=gcal_headers)
-            except Exception:
-                pass
 
-    return {"status": "success", "deleted": deleted_count}
+    # Google Calendar: borrar con ID determinista unificado
+    gcal_deleted = False
+    if gcal_headers:
+        gcal_id = generate_task_gcal_id(fecha, bloque_id)
+        try:
+            r = requests.delete(f"{GCAL_BASE}/{gcal_id}", headers=gcal_headers)
+            gcal_deleted = r.status_code in (200, 204, 410)
+        except Exception:
+            pass
+
+    return {"status": "success", "deleted": deleted_count, "gcal_deleted": gcal_deleted}
 
 # 2c. Obtener excepciones de una fecha (clases borradas lógicamente)
 @app.get("/api/excepciones/{fecha}")
