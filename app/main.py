@@ -501,7 +501,7 @@ def planificar_semana_ia(plan: PlanIA, request: Request):
 # === RESUMEN DIARIO (Daily Briefing) ===
 
 @app.get("/api/resumen-diario")
-def resumen_diario():
+def resumen_diario(request: Request):
     try:
         if not client:
             raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY no configurada")
@@ -512,6 +512,39 @@ def resumen_diario():
         manana = hoy + timedelta(days=1)
         fecha_hoy_str = hoy.strftime("%Y-%m-%d")
         fecha_manana_str = manana.strftime("%Y-%m-%d")
+        
+        auth_header = request.headers.get("Authorization", "")
+
+        def obtener_contexto_proyectos():
+            return (
+                "CONTEXTO DE PROYECTOS ACTUALES:\n"
+                "- Tesis Doctoral: Modelo predictivo de Tráfico con YOLO e Isolation Forest / LSTM.\n"
+                "- Vinculación/Docencia: SABIA-UNL y AsistIA V7.\n"
+            )
+
+        def get_gcal_externos(fecha_str: str):
+            if not auth_header.startswith("Bearer "): return []
+            headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+            time_min = f"{fecha_str}T00:00:00-05:00"
+            time_max = f"{fecha_str}T23:59:59-05:00"
+            params = {"timeMin": time_min, "timeMax": time_max, "singleEvents": "true", "orderBy": "startTime"}
+            ext = []
+            try:
+                res = requests.get(GCAL_BASE, headers=headers, params=params)
+                if res.status_code == 200:
+                    for item in res.json().get("items", []):
+                        origen = item.get("extendedProperties", {}).get("private", {}).get("origenApp", "")
+                        if origen != "agendaDoctoral":
+                            titulo = item.get("summary", "(Sin título)")
+                            start = item.get("start", {})
+                            hora = start.get("dateTime", start.get("date", ""))
+                            if "T" in hora:
+                                ext.append(f"  - [{hora.split('T')[1][:5]}] [Reunión Externa] {titulo}")
+                            else:
+                                ext.append(f"  - [Todo el día] [Reunión Externa] {titulo}")
+            except Exception as e:
+                print(f"Error fetch GCAL en briefing ({fecha_str}): {e}")
+            return ext
 
         def get_agenda_dia(fecha_str: str):
             """Obtiene eventos de DB + clases del distributivo para un día."""
@@ -531,6 +564,9 @@ def resumen_diario():
             except Exception as e:
                 print(f"Error consultando tareas para {fecha_str}: {e}")
             
+            # 3. Reuniones externas de Google Calendar
+            eventos.extend(get_gcal_externos(fecha_str))
+            
             if not eventos:
                 return ["  - (Día libre / sin actividades registradas)"]
             return eventos
@@ -545,14 +581,14 @@ def resumen_diario():
             f"Agenda de MAÑANA ({dia_nombre_manana} {fecha_manana_str}):\n{agenda_manana}"
         )
         system_prompt = (
-            f"Eres el estratega de Marcelo. Hoy tiene clases y tareas agendadas.\n"
-            f"Lee su agenda de HOY y MAÑANA, y resume en 3 puntos clave qué debe lograr hoy para avanzar en su tesis de tráfico (YOLO/Isolation Forest) y su libro.\n"
+            f"Aquí tienes la visión completa de la agenda de Marcelo.\n\n{obtener_contexto_proyectos()}\n"
+            f"Lee su agenda de HOY y MAÑANA. Incluye reuniones externas, clases y tareas de IA.\n"
+            f"Prioriza las reuniones externas ya que son compromisos con otras personas, y ajusta los consejos de avance en la tesis (YOLO/LSTM) según el tiempo libre real.\n"
             f"Menciona al final una 'Alerta para mañana' basada en el horario del {dia_nombre_manana}.\n"
-            f"Si no hay tareas, recomiéndale un descanso estratégico.\n"
             f"Formato OBLIGATORIO:\n"
             f"## 🌅 Prioridades del Día\n(3 viñetas)\n"
             f"## ⚡ Alerta de Mañana\n(1 frase)\n"
-            f"Tono: profesional, estratégico. Máximo 120 palabras."
+            f"Tono: profesional, urgente y estratégico. Máximo 140 palabras."
         )
 
         try:

@@ -1321,7 +1321,9 @@
             body.innerHTML = '<div style="width:100%;text-align:center;padding:20px 0"><div class="briefing-spinner"></div><p style="margin-top:12px;color:#cbd5e1;font-weight:600">🧠 Tu coach estratégico está conectando...</p></div>';
 
             try {
-                const r = await fetch('/api/resumen-diario');
+                const headers = {};
+                if (accessToken) headers['Authorization'] = 'Bearer ' + accessToken;
+                const r = await fetch('/api/resumen-diario', { headers });
                 const data = await r.json();
 
                 if (r.ok) {
